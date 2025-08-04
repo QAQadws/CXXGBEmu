@@ -34,10 +34,10 @@ public:
 
     ~CART() = default;
 
+    std::unique_ptr<u8[]> rom_data_;
 
   private:
     std::unique_ptr<rom_header> header_;
-    std::unique_ptr<u8[]> rom_data_;
     u32 rom_size_;
 };
 #endif // __CART_H__

@@ -1,0 +1,88 @@
+#include"cpu.h"
+#include"emu.h"
+#include "instructions.h"
+#include<iostream>
+
+CPU::CPU()
+{
+  af(0x01B0);
+  bc(0x0013);
+  de(0x00D8);
+  hl(0x014D);
+  sp = 0xFFFE;
+  pc = 0x0100;
+  halted_ = false;
+  interrupt_master_enabled_ = false; // 初始化中断使能状态为 false
+  interrupt_master_enabling_countdown_ = 0; // 初始化中断使能倒计时为 0
+}
+
+void CPU::step(EMU *emu)
+{
+    if(halted_) {
+      emu->tick(1);
+      if (emu->int_flags & emu->int_enable_flags) {
+        halted_ = false;
+      }
+    } else {
+      u8 opcode = emu->bus_read(pc);
+#ifdef DEBUG
+        std::cout<< "\n"<< std::hex << pc <<"\t"<< std::hex << (int)opcode;
+#endif
+        pc++;
+        instruction_func_t instruction = instructions_map[opcode];
+        if(!instruction){
+        std::cerr << "Unknown opcode: " << std::hex << (int)opcode << std::endl;
+        emu->paused_ = true;  // 停止执行
+    }
+        else{
+            instruction(emu);
+        }
+    }
+    if (interrupt_master_enabling_countdown_) {
+      --interrupt_master_enabling_countdown_;
+      if (!interrupt_master_enabling_countdown_) {
+        interrupt_master_enabled_ = true;
+      }
+    }
+}
+
+inline void push_16(EMU *emu, u16 value) {
+  emu->cpu_.sp -= 2;
+  emu->bus_write(emu->cpu_.sp, static_cast<u8>(value & 0xFF));
+  emu->bus_write(emu->cpu_.sp + 1, static_cast<u8>((value >> 8) & 0xFF));
+}
+void CPU::service_interrupt(EMU *emu)
+{
+      u8 int_flags = emu->int_flags & emu->int_enable_flags;
+    u8 service_int = 0;
+    if(int_flags & INT_VBLANK) service_int = INT_VBLANK;
+    else if(int_flags & INT_LCD_STAT) service_int = INT_LCD_STAT;
+    else if(int_flags & INT_TIMER) service_int = INT_TIMER;
+    else if(int_flags & INT_SERIAL) service_int = INT_SERIAL;
+    else if(int_flags & INT_JOYPAD) service_int = INT_JOYPAD;
+    emu->int_flags &= ~service_int;
+    emu->cpu_.disable_interrupt_master();
+    emu->tick(2);
+    push_16(emu, emu->cpu_.pc);
+    emu->tick(2);
+    switch(service_int)
+    {
+        case INT_VBLANK: emu->cpu_.pc = 0x40; break;
+        case INT_LCD_STAT: emu->cpu_.pc = 0x48; break;
+        case INT_TIMER: emu->cpu_.pc = 0x50; break;
+        case INT_SERIAL: emu->cpu_.pc = 0x58; break;
+        case INT_JOYPAD: emu->cpu_.pc = 0x60; break;
+    }
+    emu->tick(1);
+}
+
+void CPU::enable_interrupt_master()
+{
+    interrupt_master_enabling_countdown_ = 2; // 设置倒计时为2个周期
+}
+
+void CPU::disable_interrupt_master()
+{
+    interrupt_master_enabled_ = false; // 禁用中断
+    interrupt_master_enabling_countdown_ = 0; // 重置倒计时
+}

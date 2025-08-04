@@ -1,12 +1,9 @@
-#include"cart.h"
-
+#include"platform.h"
 using namespace std;
 
 int main(int argc, char* argv[]) {
-    
-    //CART cart("dmg-acid2.gb");
-    if(argc>=2){
-        CART cart(argv[1]);
-    }
+    PLATFORM platform;
+    platform.init(argc, argv);
+    platform.run();
     return 0;
 }
