@@ -23,6 +23,8 @@ EMU::EMU(int argc, char *argv[])
     int_flags = 0x00; // 初始化中断标志寄存器
     int_enable_flags = 0x00; // 初始化中断使能寄存器
     paused_ = false; // 初始化暂停状态为 false
+    timer_.init();
+    serial_.init();
 }
 
 void EMU::update(f64 dt)
@@ -35,9 +37,20 @@ void EMU::update(f64 dt)
  }
 }
 
-
-void EMU::tick(u32 mcycles) { clock_cycles_ += mcycles * 4; }
-
+void EMU::tick(u32 mcycles) {
+  u32 tick_cycles = mcycles * 4; // 每个机器周期包含4个时钟周期
+  for (u32 i = 0; i < tick_cycles; ++i) {
+    ++clock_cycles_;
+    timer_.tick(this);
+    if(clock_cycles_ % 512 ==0) {
+      serial_.tick(this);
+      if(serial_.output_buffer_.size() > 0) {
+        std::cout<<"serial_.output_buffer_.size: " <<serial_.output_buffer_.size()<<std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+  }
+}
 
 u8 EMU::bus_read(u16 addressess)
 {
@@ -59,11 +72,28 @@ u8 EMU::bus_read(u16 addressess)
     // Working RAM.
     return wram[addressess - 0xC000];
   }
+  if(addressess >= 0xFF01 && addressess <= 0xFF02) {
+    // Serial transfer registers.
+    return serial_.bus_read(addressess);
+  }
+  if(addressess>=0xFF04 && addressess <= 0xFF07) {
+    // Timer registers.
+    return timer_.bus_read(addressess);
+  }
+  if(addressess == 0xFF0F) {
+    // Interrupt flags register.
+    return int_flags | 0xE0; // 0xE0 is the default value for unused bits
+  }
   if (addressess >= 0xFF80 && addressess <= 0xFFFE) {
     // High RAM.
     return hram[addressess - 0xFF80];
   }
+  if(addressess == 0xFFFF) {
+    // Interrupt enable register.
+    return int_enable_flags | 0xE0; // 0xE0 is the default value for unused bits
+  }
   std::cerr << "Invalid memory read at addressess: " << std::hex << addressess << std::endl;
+  //exit(EXIT_FAILURE);
   return 0xFF;
 }
 
@@ -90,12 +120,33 @@ void EMU::bus_write(u16 address, u8 value)
     wram[address - 0xC000] = value;
     return;
   }
+  if(address >= 0xFF01 && address <= 0xFF02) {
+    // Serial transfer registers.
+    serial_.bus_write(address, value);
+    return;
+  }
+  if(address >= 0xFF04 && address <= 0xFF07) {
+    // Timer registers.
+    timer_.bus_write(address, value);
+    return;
+  }
+  if(address == 0xFF0F) {
+    // Interrupt flags register.
+    int_flags = value & 0x1F; // 保留高位
+    return;
+  }
   if (address >= 0xFF80 && address <= 0xFFFE) {
     // High RAM.
     hram[address - 0xFF80] = value;
     return;
   }
+  if(address == 0xFFFF) {
+    // Interrupt enable register.
+    int_enable_flags = value & 0x1F; // 保留高位
+    return;
+  }
   std::cerr << "Invalid memory write at address: " << std::hex << address << std::endl;
+  //exit(EXIT_FAILURE);
   return;
 }
 // 0x0000 - 0x3FFF : ROM Bank 0

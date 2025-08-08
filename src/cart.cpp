@@ -1,4 +1,5 @@
 #include "cart.h"
+#include <cstdlib>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -168,12 +169,15 @@ bool CART::load_cart(const char *filename) {
         return true;
       } else {
         std::cerr << "ROM file too small for header at 0x100" << std::endl;
+        exit(EXIT_FAILURE);
       }
     } else {
       std::cerr << "Failed to read ROM data: " << filename << std::endl;
+      
     }
   } else {
     std::cerr << "Failed to open ROM file: " << filename << std::endl;
+    exit(EXIT_FAILURE);
   }
   return false;
 }

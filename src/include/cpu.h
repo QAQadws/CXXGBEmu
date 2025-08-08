@@ -1,6 +1,7 @@
 #ifndef __CPU_H__
 #define __CPU_H__
 #include"defs.h"
+#include"dbg.h"
 class EMU;
 
 class CPU {
@@ -14,7 +15,7 @@ u8 h, l;
 bool halted_; // Halted state
 bool interrupt_master_enabled_ = false; // 中断使能状态
 u8 interrupt_master_enabling_countdown_ = 0; // 中断使能倒计时
-
+DBG dbg_; // 调试器实例
 
   CPU();
   void step(EMU *emu);

@@ -1,7 +1,7 @@
 #include "platform.h"
 #include "defs.h"
 #include <chrono>
-#include <thread>
+//#include <thread>
 
 void PLATFORM::init(int argc, char *argv[]) {
     emu_ = EMU(argc, argv);
@@ -36,7 +36,7 @@ void PLATFORM::run() {
       lastFrameTime = currentTime;
     } else {
       // 短暂休眠避免 CPU 100% 占用
-      std::this_thread::sleep_for(std::chrono::microseconds(100));
+      //std::this_thread::sleep_for(std::chrono::microseconds(100));
     }
   }
 }

@@ -1,7 +1,10 @@
 #include"cpu.h"
+#include "defs.h"
 #include"emu.h"
 #include "instructions.h"
 #include<iostream>
+#include <string>
+#include<format>
 
 CPU::CPU()
 {
@@ -16,34 +19,55 @@ CPU::CPU()
   interrupt_master_enabling_countdown_ = 0; // 初始化中断使能倒计时为 0
 }
 
-void CPU::step(EMU *emu)
-{
-    if(halted_) {
-      emu->tick(1);
-      if (emu->int_flags & emu->int_enable_flags) {
-        halted_ = false;
-      }
+void CPU::step(EMU *emu) {
+  if (halted_) {
+    emu->tick(1);
+    if ((emu->int_flags & emu->int_enable_flags)) {
+      halted_ = false;
+    }
+  } else {
+    if (interrupt_master_enabled_ && (emu->int_flags & emu->int_enable_flags)) {
+      service_interrupt(emu);
     } else {
       u8 opcode = emu->bus_read(pc);
+      pc++;
+      instruction_func_t instruction = instructions_map[opcode];
+      if (!instruction) {
+        std::cerr <<"\t"<< "Unknown opcode: " << std::hex << (int)opcode << std::endl;
+        emu->paused_ = true; // 停止执行
+      } else {
 #ifdef DEBUG
-        std::cout<< "\n"<< std::hex << pc <<"\t"<< std::hex << (int)opcode;
+        std::string flags =
+            std::format("{}{}{}{}", (emu->cpu_.f & (1 << 7)) ? 'Z' : '-',
+                        (emu->cpu_.f & (1 << 6)) ? 'N' : '-',
+                        (emu->cpu_.f & (1 << 5)) ? 'H' : '-',
+                        (emu->cpu_.f & (1 << 4)) ? 'C' : '-');
+        printf("%08llX - %04X: %-16s (%02X %02X %02X) A: %02X  F: %s  BC: %04X  DE: %04X  HL: %04X\n",
+          emu->clock_cycles_,
+          pc - 1,
+          instruction_names[opcode].c_str(),
+          emu->bus_read(pc - 1),
+          emu->bus_read(pc),
+          emu->bus_read(pc + 1),
+          emu->cpu_.a,
+          flags.c_str(),
+          emu->cpu_.bc(),
+          emu->cpu_.de(),
+          emu->cpu_.hl());
+
+          // dbg_.dbg_update(emu);
+          // dbg_.dbg_print();
 #endif
-        pc++;
-        instruction_func_t instruction = instructions_map[opcode];
-        if(!instruction){
-        std::cerr << "Unknown opcode: " << std::hex << (int)opcode << std::endl;
-        emu->paused_ = true;  // 停止执行
-    }
-        else{
-            instruction(emu);
-        }
-    }
-    if (interrupt_master_enabling_countdown_) {
-      --interrupt_master_enabling_countdown_;
-      if (!interrupt_master_enabling_countdown_) {
-        interrupt_master_enabled_ = true;
+        instruction(emu);
       }
     }
+  }
+  if (interrupt_master_enabling_countdown_) {
+    --interrupt_master_enabling_countdown_;
+    if (!interrupt_master_enabling_countdown_) {
+      interrupt_master_enabled_ = true;
+    }
+  }
 }
 
 inline void push_16(EMU *emu, u16 value) {

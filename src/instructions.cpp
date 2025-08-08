@@ -11,18 +11,12 @@ inline constexpr u16 make_u16(u8 low, u8 high)
 inline u16 read_d16(EMU* emu)
 {
     u16 r = make_u16(emu->bus_read(emu->cpu_.pc), emu->bus_read(emu->cpu_.pc + 1));
-#ifdef DEBUG
-    std::cout << "\t" << std::hex << r;
-#endif
     emu->cpu_.pc += 2;
     return r;
 }
 inline u8 read_d8(EMU* emu)
 {
     u8 r = emu->bus_read(emu->cpu_.pc);
-#ifdef DEBUG
-    std::cout << "\t" << std::hex << r;
-#endif
     ++emu->cpu_.pc;
     return r;
 }
@@ -1216,8 +1210,8 @@ void xcb_prefix_cb(EMU *emu) {
         case 6: data = emu->bus_read(emu->cpu_.hl()); emu->tick(1); break;
         case 7: data = emu->cpu_.a; break;
         default:
-        std::cerr << "Invalid data bits in CB prefix: " << (int)data_bits << std::endl;
-        break;
+            std::cerr << "Invalid data bits in CB prefix: " << (int)data_bits << std::endl;
+            exit(EXIT_FAILURE);
     }
     if(op_bits == 0) {
         // RLC
@@ -1253,6 +1247,7 @@ void xcb_prefix_cb(EMU *emu) {
         set_8(emu, data, op_bits-0x18);
     } else {
         std::cerr << "Invalid CB prefix operation: " << (int)op_bits << std::endl;
+        exit(EXIT_FAILURE);
     }
     switch (data_bits) {
         case 0: emu->cpu_.b = data; break;
@@ -1264,8 +1259,10 @@ void xcb_prefix_cb(EMU *emu) {
         case 6: emu->bus_write(emu->cpu_.hl(), data); emu->tick(1); break;
         case 7: emu->cpu_.a = data; break;
         default:
-        std::cerr << "Invalid data bits in CB prefix: " << (int)data_bits << std::endl;
-        break;
+        {
+            std::cerr << "Invalid data bits in CB prefix: " << (int)data_bits << std::endl;
+            exit(EXIT_FAILURE);
+        }
     }
     emu->tick(1);
 }
