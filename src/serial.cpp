@@ -1,5 +1,6 @@
 #include "serial.h"
 #include "emu.h"
+#include <cstdlib>
 #include<iostream>
 void SERIAL::init()
 {
@@ -9,7 +10,7 @@ void SERIAL::init()
 }
 
 void SERIAL::tick(EMU* emu)
-{
+{   
     if(!transferring_ && is_master() && transfer_enable()){
         begin_transfer(); // 如果是主机并且传输使能，开始传
     }

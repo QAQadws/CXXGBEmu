@@ -1,4 +1,5 @@
 #include"emu.h"
+#include <cstdlib>
 #include <memory>
 #include <iostream>
 
@@ -20,8 +21,8 @@ EMU::EMU(int argc, char *argv[])
         scale = atof(argv[2]);
     }
     clock_cycles_ = 0;
-    int_flags = 0x00; // 初始化中断标志寄存器
-    int_enable_flags = 0x00; // 初始化中断使能寄存器
+    int_flags = 0; // 初始化中断标志寄存器
+    int_enable_flags = 0; // 初始化中断使能寄存器
     paused_ = false; // 初始化暂停状态为 false
     timer_.init();
     serial_.init();
@@ -42,13 +43,11 @@ void EMU::tick(u32 mcycles) {
   for (u32 i = 0; i < tick_cycles; ++i) {
     ++clock_cycles_;
     timer_.tick(this);
-    if(clock_cycles_ % 512 ==0) {
+    if((clock_cycles_ % 512) ==0) {
       serial_.tick(this);
-      if(serial_.output_buffer_.size() > 0) {
-        std::cout<<"serial_.output_buffer_.size: " <<serial_.output_buffer_.size()<<std::endl;
-        exit(EXIT_FAILURE);
-      }
     }
+    // serial_.tick(this);
+
   }
 }
 
@@ -66,6 +65,7 @@ u8 EMU::bus_read(u16 addressess)
     // Cartridge RAM.
     //TODO
     std::cerr << "Reading from cartridge RAM is not implemented yet." << std::endl;
+    exit(EXIT_FAILURE);
     return 0xFF;
   }
   if (addressess <= 0xDFFF) {

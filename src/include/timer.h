@@ -16,10 +16,10 @@ public:
   bool tima_enabled() const {return (tac_ & 0x04) != 0;}
 
 private:
-  u16 div_ = 0;  // Divider Register 0xFF04
+  u16 div_ = 0xAC00;  // Divider Register 0xFF04
   u8 tima_ = 0; // Timer Counter Register 0xFF05
   u8 tma_ = 0;  // Timer Modulo Register 0xFF06
-  u8 tac_ = 0;  // Timer Control Register 0xFF07
+  u8 tac_ = 0xF8;  // Timer Control Register 0xFF07
 };
 
 #endif // __TIMER_H__

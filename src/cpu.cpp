@@ -6,9 +6,12 @@
 #include <string>
 #include<format>
 
+#ifdef DEBUG
+static u32 count = 0;
+#endif
 CPU::CPU()
 {
-  af(0x01B0);
+  af(0x01B0);//0x01B0 = 0000 0001 1011 0000
   bc(0x0013);
   de(0x00D8);
   hl(0x014D);
@@ -55,8 +58,17 @@ void CPU::step(EMU *emu) {
           emu->cpu_.de(),
           emu->cpu_.hl());
 
-          // dbg_.dbg_update(emu);
-          // dbg_.dbg_print();
+          dbg_.dbg_update(emu);
+          dbg_.dbg_print();
+          count++;
+          // if (count >= 100) {
+          // exit(EXIT_FAILURE);
+          // }
+          // count++;
+          // if (count >= 16700) {
+          // exit(EXIT_FAILURE);
+          // }
+
 #endif
         instruction(emu);
       }
@@ -72,13 +84,14 @@ void CPU::step(EMU *emu) {
 
 inline void push_16(EMU *emu, u16 value) {
   emu->cpu_.sp -= 2;
-  emu->bus_write(emu->cpu_.sp, static_cast<u8>(value & 0xFF));
   emu->bus_write(emu->cpu_.sp + 1, static_cast<u8>((value >> 8) & 0xFF));
+  emu->bus_write(emu->cpu_.sp, static_cast<u8>(value & 0xFF));
 }
 void CPU::service_interrupt(EMU *emu)
 {
       u8 int_flags = emu->int_flags & emu->int_enable_flags;
     u8 service_int = 0;
+
     if(int_flags & INT_VBLANK) service_int = INT_VBLANK;
     else if(int_flags & INT_LCD_STAT) service_int = INT_LCD_STAT;
     else if(int_flags & INT_TIMER) service_int = INT_TIMER;

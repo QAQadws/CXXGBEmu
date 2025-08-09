@@ -10,10 +10,10 @@ void TIMER::init()
     tac_ = 0xF8;
 }
 
-void TIMER::tick(EMU* emu)
-{
-    u16 old_div = div_;
-    ++div_; // DIV 每个机器周期增加1
+void TIMER::tick(EMU *emu) {
+  u16 old_div = div_;
+  ++div_; // DIV 每个机器周期增加1
+  if (tima_enabled()) {
     bool tima_update = false;
     switch (clock_select()) {
     case 0:
@@ -37,6 +37,7 @@ void TIMER::tick(EMU* emu)
         ++tima_;
       }
     }
+  }
 }
 
 u8 TIMER::bus_read(u16 address)

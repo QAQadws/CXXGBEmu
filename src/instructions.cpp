@@ -45,8 +45,8 @@ inline void cp_8(EMU *emu, u16 v1, u16 v2) {
 }
 inline void push_16(EMU *emu, u16 value) {
     emu->cpu_.sp -= 2;
-    emu->bus_write(emu->cpu_.sp, static_cast<u8>(value & 0xFF));
     emu->bus_write(emu->cpu_.sp + 1, static_cast<u8>((value >> 8) & 0xFF));
+    emu->bus_write(emu->cpu_.sp, static_cast<u8>(value & 0xFF));
 }
 inline u16 pop_16(EMU *emu) {
     u16 value = make_u16(emu->bus_read(emu->cpu_.sp), emu->bus_read(emu->cpu_.sp + 1));
@@ -56,6 +56,7 @@ inline u16 pop_16(EMU *emu) {
 inline void inc_8(EMU *emu, u8 &v) {
     ++v;
     set_zero_flag(emu, v);
+    emu->cpu_.reset_fn();
     if((v & 0x0F) == 0x00) {
         emu->cpu_.set_fh();
     } else {
@@ -66,7 +67,7 @@ inline void dec_8(EMU *emu, u8 &v) {
     --v;
     set_zero_flag(emu, v);
     emu->cpu_.set_fn();
-    if((v & 0x0F) == 0x00) {
+    if((v & 0x0F) == 0x0F) {
         emu->cpu_.set_fh();
     } else {
         emu->cpu_.reset_fh();
@@ -187,16 +188,19 @@ inline void rlc_8(EMU *emu, u8 &v) {
     }
 }
 inline void rl_8(EMU *emu, u8 &v) {
-    u8 carry = v >> 7; // 获取最高位
-    v = (v << 1) | emu->cpu_.fc(); // 左移并将进位标志放到最低位
-    set_zero_flag(emu, v);
-    emu->cpu_.reset_fn();
-    emu->cpu_.reset_fh();
-    if (carry) {
-        emu->cpu_.set_fc(); // 设置进位标志
-    } else {
-        emu->cpu_.reset_fc(); // 重置进位标志
-    }
+  bool carry = (v & 0x80) != 0;
+  v <<= 1;
+  if (emu->cpu_.fc()) {
+    v |= 0x01;
+  }
+  if (carry) {
+    emu->cpu_.set_fc();
+  } else {
+    emu->cpu_.reset_fc();
+  }
+  set_zero_flag(emu, v);
+  emu->cpu_.reset_fn();
+  emu->cpu_.reset_fh();
 }
 inline void rrc_8(EMU *emu, u8 &v) {
     u8 carry = v & 0x01; // 获取最低位
@@ -211,16 +215,19 @@ inline void rrc_8(EMU *emu, u8 &v) {
     }
 }
 inline void rr_8(EMU *emu, u8 &v) {
-    u8 carry = v & 0x01; // 获取最低位
-    v = (v >> 1) | (emu->cpu_.fc() << 7); // 右移并将进位标志放到最高位
-    set_zero_flag(emu, v);
-    emu->cpu_.reset_fn();
-    emu->cpu_.reset_fh();
-    if (carry) {
-        emu->cpu_.set_fc(); // 设置进位标志
-    } else {
-        emu->cpu_.reset_fc(); // 重置进位标志
-    }
+  bool carry = (v & 0x01) != 0;
+  v >>= 1;
+  if (emu->cpu_.fc()) {
+    v |= 0x80;
+  }
+  if (carry) {
+    emu->cpu_.set_fc();
+  } else {
+    emu->cpu_.reset_fc();
+  }
+  set_zero_flag(emu, v);
+  emu->cpu_.reset_fn();
+  emu->cpu_.reset_fh();
 }
 inline void sla_8(EMU *emu, u8 &v) {
     u8 carry = v >> 7; // 获取最高位
@@ -317,9 +324,11 @@ void x07_rlca(EMU *emu) {
 // LD (BC),A instruction stores the value in the A register into the memory location pointed to by BC
 void x08_ld_a16_sp(EMU *emu) {
     u16 address = read_d16(emu);
+    emu->tick(2);
     emu->bus_write(address, emu->cpu_.sp & 0xFF);
+    emu->tick(1);
     emu->bus_write(address + 1, (emu->cpu_.sp >> 8) & 0xFF);
-    emu->tick(5);
+    emu->tick(2);
 }
 void x09_add_hl_bc(EMU *emu) {
     emu->cpu_.hl(add_16(emu, emu->cpu_.hl(), emu->cpu_.bc()));
@@ -549,19 +558,23 @@ void x33_inc_sp(EMU *emu) {
 }
 void x34_inc_mhl(EMU *emu) {
     u8 temp = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
     inc_8(emu, temp);
     emu->bus_write(emu->cpu_.hl(), temp);
-    emu->tick(3);
+    emu->tick(2);
 }
 void x35_dec_mhl(EMU *emu) {
     u8 temp = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
     dec_8(emu, temp);
     emu->bus_write(emu->cpu_.hl(), temp);
-    emu->tick(3);
+    emu->tick(2);
 }
 void x36_ld_mhl_d8(EMU *emu) {
-    emu->bus_write(emu->cpu_.hl(), read_d8(emu));
-    emu->tick(3);
+    u8 value = read_d8(emu);
+    emu->tick(1);
+    emu->bus_write(emu->cpu_.hl(), value);
+    emu->tick(2);
 }
 void x37_scf(EMU *emu) {
     emu->cpu_.reset_fn(); // 清除负标志
@@ -896,8 +909,10 @@ void x85_add_a_l(EMU *emu) {
     emu->tick(1);
 }
 void x86_add_a_mhl(EMU *emu) {
-    emu->cpu_.a = add_8(emu, emu->cpu_.a, emu->bus_read(emu->cpu_.hl()));
-    emu->tick(2);
+    u8 value = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
+    emu->cpu_.a = add_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void x87_add_a_a(EMU *emu) {
     emu->cpu_.a = add_8(emu, emu->cpu_.a, emu->cpu_.a);
@@ -928,8 +943,10 @@ void x8d_adc_a_l(EMU *emu) {
     emu->tick(1);
 }
 void x8e_adc_a_mhl(EMU *emu) {
-    emu->cpu_.a = adc_8(emu, emu->cpu_.a, emu->bus_read(emu->cpu_.hl()));
-    emu->tick(2);
+    u8 value = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
+    emu->cpu_.a = adc_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void x8f_adc_a_a(EMU *emu) {
     emu->cpu_.a = adc_8(emu, emu->cpu_.a, emu->cpu_.a);
@@ -960,8 +977,10 @@ void x95_sub_l(EMU *emu) {
     emu->tick(1);
 }
 void x96_sub_mhl(EMU *emu) {
-    emu->cpu_.a = sub_8(emu, emu->cpu_.a, emu->bus_read(emu->cpu_.hl()));
-    emu->tick(2);
+    u8 value = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
+    emu->cpu_.a = sub_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void x97_sub_a(EMU *emu) {
     emu->cpu_.a = sub_8(emu, emu->cpu_.a, emu->cpu_.a);
@@ -992,8 +1011,10 @@ void x9d_sbc_a_l(EMU *emu) {
     emu->tick(1);
 }
 void x9e_sbc_a_mhl(EMU *emu) {
-    emu->cpu_.a = sbc_8(emu, emu->cpu_.a, emu->bus_read(emu->cpu_.hl()));
-    emu->tick(2);
+    u8 value = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
+    emu->cpu_.a = sbc_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void x9f_sbc_a_a(EMU *emu) {
     emu->cpu_.a = sbc_8(emu, emu->cpu_.a, emu->cpu_.a);
@@ -1024,8 +1045,10 @@ void xa5_and_l(EMU *emu) {
     emu->tick(1);
 }
 void xa6_and_mhl(EMU *emu) {
-    emu->cpu_.a = and_8(emu, emu->cpu_.a, emu->bus_read(emu->cpu_.hl()));
-    emu->tick(2);
+    u8 value = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
+    emu->cpu_.a = and_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xa7_and_a(EMU *emu) {
     emu->cpu_.a = and_8(emu, emu->cpu_.a, emu->cpu_.a);
@@ -1056,8 +1079,10 @@ void xad_xor_l(EMU *emu) {
     emu->tick(1);
 }
 void xae_xor_mhl(EMU *emu) {
-    emu->cpu_.a = xor_8(emu, emu->cpu_.a, emu->bus_read(emu->cpu_.hl()));
-    emu->tick(2);
+    u8 value = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
+    emu->cpu_.a = xor_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xaf_xor_a(EMU *emu) {
     emu->cpu_.a = xor_8(emu, emu->cpu_.a, emu->cpu_.a);
@@ -1088,8 +1113,10 @@ void xb5_or_l(EMU *emu) {
     emu->tick(1);
 }
 void xb6_or_mhl(EMU *emu) {
-    emu->cpu_.a = or_8(emu, emu->cpu_.a, emu->bus_read(emu->cpu_.hl()));
-    emu->tick(2);
+    u8 value = emu->bus_read(emu->cpu_.hl());
+    emu->tick(1);
+    emu->cpu_.a = or_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xb7_or_a(EMU *emu) {
     emu->cpu_.a = or_8(emu, emu->cpu_.a, emu->cpu_.a);
@@ -1140,8 +1167,9 @@ void xc1_pop_bc(EMU *emu) {
     emu->tick(3);
 }
 void xc2_jp_nz_a16(EMU *emu) {
+    u16 addr = read_d16(emu);
     if (!emu->cpu_.fz()) {
-        emu->cpu_.pc = read_d16(emu);
+        emu->cpu_.pc = addr;
         emu->tick(4);
     } else {
         emu->tick(3);
@@ -1152,22 +1180,25 @@ void xc3_jp_a16(EMU *emu) {
     emu->tick(4);
 }
 void xc4_call_nz_a16(EMU *emu) {
-    if (!emu->cpu_.fz()) {
-        u16 address = read_d16(emu);
-        push_16(emu, emu->cpu_.pc);
-        emu->cpu_.pc = address;
-        emu->tick(6);
-    } else {
-        emu->tick(3);
-    }
+  u16 addr = read_d16(emu);
+  emu->tick(2);
+  if (!emu->cpu_.fz()) {
+    push_16(emu, emu->cpu_.pc);
+    emu->cpu_.pc = addr;
+    emu->tick(4);
+  } else {
+    emu->tick(1);
+  }
 }
 void xc5_push_bc(EMU *emu) {
     push_16(emu, emu->cpu_.bc());
     emu->tick(4);
 }
 void xc6_add_a_d8(EMU *emu) {
-    emu->cpu_.a = add_8(emu, emu->cpu_.a, read_d8(emu));
-    emu->tick(2);
+    u8 value = read_d8(emu);
+    emu->tick(1);
+    emu->cpu_.a = add_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xc7_rst_00h(EMU *emu) {
     push_16(emu, emu->cpu_.pc);
@@ -1187,8 +1218,9 @@ void xc9_ret(EMU *emu) {
     emu->tick(4);
 }
 void xca_jp_z_a16(EMU *emu) {
+    u16 addr = read_d16(emu);
     if (emu->cpu_.fz()) {
-        emu->cpu_.pc = read_d16(emu);
+        emu->cpu_.pc = addr;
         emu->tick(4);
     } else {
         emu->tick(3);
@@ -1198,7 +1230,6 @@ void xcb_prefix_cb(EMU *emu) {
     u8 op = read_d8(emu);
     emu->tick(1);
     u8 data_bits = op & 0x07;
-    u8 op_bits = (op & 0xF8) >> 3;
     u8 data;
     switch(data_bits) {
         case 0: data = emu->cpu_.b; break;
@@ -1209,10 +1240,9 @@ void xcb_prefix_cb(EMU *emu) {
         case 5: data = emu->cpu_.l; break;
         case 6: data = emu->bus_read(emu->cpu_.hl()); emu->tick(1); break;
         case 7: data = emu->cpu_.a; break;
-        default:
-            std::cerr << "Invalid data bits in CB prefix: " << (int)data_bits << std::endl;
-            exit(EXIT_FAILURE);
+  
     }
+    u8 op_bits = (op & 0xF8) >> 3;
     if(op_bits == 0) {
         // RLC
         rlc_8(emu, data);
@@ -1241,15 +1271,16 @@ void xcb_prefix_cb(EMU *emu) {
     else if(op_bits <= 0x0F) {
         bit_8(emu, data, op_bits-0x08);
     }
-    else if(op_bits <= 0x1F) {
+    else if(op_bits <= 0x17) {
         res_8(emu, data, op_bits-0x10);
-    } else if(op_bits <= 0x2F) {
+    } else if(op_bits <= 0x1F) {
         set_8(emu, data, op_bits-0x18);
     } else {
         std::cerr << "Invalid CB prefix operation: " << (int)op_bits << std::endl;
         exit(EXIT_FAILURE);
     }
-    switch (data_bits) {
+    if(op_bits <=0x07 ||op_bits >=0x10){
+      switch (data_bits) {
         case 0: emu->cpu_.b = data; break;
         case 1: emu->cpu_.c = data; break;
         case 2: emu->cpu_.d = data; break;
@@ -1258,33 +1289,33 @@ void xcb_prefix_cb(EMU *emu) {
         case 5: emu->cpu_.l = data; break;
         case 6: emu->bus_write(emu->cpu_.hl(), data); emu->tick(1); break;
         case 7: emu->cpu_.a = data; break;
-        default:
-        {
-            std::cerr << "Invalid data bits in CB prefix: " << (int)data_bits << std::endl;
-            exit(EXIT_FAILURE);
-        }
     }
+}
     emu->tick(1);
 }
 void xcc_call_z_a16(EMU *emu) {
-    if (emu->cpu_.fz()) {
-        u16 address = read_d16(emu);
-        push_16(emu, emu->cpu_.pc);
-        emu->cpu_.pc = address;
-        emu->tick(6);
-    } else {
-        emu->tick(3);
-    }
+  u16 addr = read_d16(emu);
+  emu->tick(2);
+  if (emu->cpu_.fz()) {
+    push_16(emu, emu->cpu_.pc);
+    emu->cpu_.pc = addr;
+    emu->tick(4);
+  } else {
+    emu->tick(1);
+  }
 }
 void xcd_call_a16(EMU *emu) {
     u16 address = read_d16(emu);
+    emu->tick(2);
     push_16(emu, emu->cpu_.pc);
     emu->cpu_.pc = address;
-    emu->tick(6);
+    emu->tick(4);
 }
 void xce_adc_a_d8(EMU *emu) {
-    emu->cpu_.a = adc_8(emu, emu->cpu_.a, read_d8(emu));
-    emu->tick(2);
+    u8 value = read_d8(emu);
+    emu->tick(1);
+    emu->cpu_.a = adc_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xcf_rst_08h(EMU *emu) {
     push_16(emu, emu->cpu_.pc);
@@ -1304,21 +1335,23 @@ void xd1_pop_de(EMU *emu) {
     emu->tick(3);
 }
 void xd2_jp_nc_a16(EMU *emu) {
+    u16 addr = read_d16(emu);
     if (!emu->cpu_.fc()) {
-        emu->cpu_.pc = read_d16(emu);
+        emu->cpu_.pc = addr;
         emu->tick(4);
     } else {
         emu->tick(3);
     }
 }
 void xd4_call_nc_a16(EMU *emu) {
+    u16 address = read_d16(emu);
+    emu->tick(2);
     if (!emu->cpu_.fc()) {
-        u16 address = read_d16(emu);
         push_16(emu, emu->cpu_.pc);
         emu->cpu_.pc = address;
-        emu->tick(6);
+        emu->tick(4);
     } else {
-        emu->tick(3);
+        emu->tick(1);
     }
 }
 void xd5_push_de(EMU *emu) {
@@ -1326,8 +1359,10 @@ void xd5_push_de(EMU *emu) {
     emu->tick(4);
 }
 void xd6_sub_d8(EMU *emu) {
-    emu->cpu_.a = sub_8(emu, emu->cpu_.a, read_d8(emu));
-    emu->tick(2);
+    u8 value = read_d8(emu);
+    emu->tick(1);
+    emu->cpu_.a = sub_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xd7_rst_10h(EMU *emu) {
     push_16(emu, emu->cpu_.pc);
@@ -1347,26 +1382,30 @@ void xd9_reti(EMU *emu) {
   xc9_ret(emu);
 }
 void xda_jp_c_a16(EMU *emu) {
+    u16 addr = read_d16(emu);
     if (emu->cpu_.fc()) {
-        emu->cpu_.pc = read_d16(emu);
+        emu->cpu_.pc = addr;
         emu->tick(4);
     } else {
         emu->tick(3);
     }
 }
 void xdc_call_c_a16(EMU *emu) {
+    u16 address = read_d16(emu);
+    emu->tick(2);
     if (emu->cpu_.fc()) {
-        u16 address = read_d16(emu);
         push_16(emu, emu->cpu_.pc);
         emu->cpu_.pc = address;
-        emu->tick(6);
+        emu->tick(4);
     } else {
-        emu->tick(3);
+        emu->tick(1);
     }
 }
 void xde_sbc_a_d8(EMU *emu) {
-    emu->cpu_.a = sbc_8(emu, emu->cpu_.a, read_d8(emu));
-    emu->tick(2);
+    u8 value = read_d8(emu);
+    emu->tick(1);
+    emu->cpu_.a = sbc_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xdf_rst_18h(EMU *emu) {
     push_16(emu, emu->cpu_.pc);
@@ -1374,8 +1413,10 @@ void xdf_rst_18h(EMU *emu) {
     emu->tick(4);
 }
 void xe0_ldh_m8_a(EMU *emu) {
-    emu->bus_write(0xFF00 + static_cast<u16>(read_d8(emu)), emu->cpu_.a);
-    emu->tick(3);
+  u8 addr = read_d8(emu);
+  emu->tick(1);
+  emu->bus_write(0xFF00 + static_cast<u16>(addr), emu->cpu_.a);
+  emu->tick(2);
 }
 void xe1_pop_hl(EMU *emu) {
     emu->cpu_.hl(pop_16(emu));
@@ -1390,8 +1431,10 @@ void xe5_push_hl(EMU *emu) {
     emu->tick(4);
 }
 void xe6_and_d8(EMU *emu) {
-    emu->cpu_.a = and_8(emu, emu->cpu_.a, read_d8(emu));
-    emu->tick(2);
+    u8 value = read_d8(emu);
+    emu->tick(1);
+    emu->cpu_.a = and_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xe7_rst_20h(EMU *emu) {
     push_16(emu, emu->cpu_.pc);
@@ -1403,8 +1446,8 @@ void xe8_add_sp_r8(EMU *emu) {
     emu->cpu_.reset_fn();
     u16 v1 = emu->cpu_.sp;
     s16 v2 = static_cast<s16>(static_cast<s8>(read_d8(emu)));
+    emu->tick(1);
     u16 temp = v1 + v2;
-    emu->cpu_.sp = temp;
     u16 check = v1 ^ v2 ^ temp;
     if (check & 0x100) {
         emu->cpu_.set_fc();
@@ -1416,6 +1459,7 @@ void xe8_add_sp_r8(EMU *emu) {
     } else {
         emu->cpu_.reset_fh();
     }
+    emu->cpu_.sp = temp;
     emu->tick(3);
 }
 void xe9_jp_hl(EMU *emu) {
@@ -1424,12 +1468,15 @@ void xe9_jp_hl(EMU *emu) {
 }
 void xea_ld_a16_a(EMU *emu) {
     u16 address = read_d16(emu);
+    emu->tick(2);
     emu->bus_write(address, emu->cpu_.a);
-    emu->tick(4);
+    emu->tick(2);
 }
 void xee_xor_d8(EMU *emu) {
-    emu->cpu_.a = xor_8(emu, emu->cpu_.a, read_d8(emu));
-    emu->tick(2);
+    u8 value = read_d8(emu);
+    emu->tick(1);
+    emu->cpu_.a = xor_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xef_rst_28h(EMU *emu) {
     push_16(emu, emu->cpu_.pc);
@@ -1437,8 +1484,10 @@ void xef_rst_28h(EMU *emu) {
     emu->tick(4);
 }
 void xf0_ldh_a_m8(EMU *emu) {
-    emu->cpu_.a = emu->bus_read(0xFF00 + static_cast<u16>(read_d8(emu)));
-    emu->tick(3);
+  u8 addr = read_d8(emu);
+  emu->tick(1);
+  emu->cpu_.a = emu->bus_read(0xFF00 + static_cast<u16>(addr));
+  emu->tick(2);
 }
 void xf1_pop_af(EMU *emu) {
     emu->cpu_.af(pop_16(emu));
@@ -1457,8 +1506,10 @@ void xf5_push_af(EMU *emu) {
     emu->tick(4);
 }
 void xf6_or_d8(EMU *emu) {
-    emu->cpu_.a = or_8(emu, emu->cpu_.a, read_d8(emu));
-    emu->tick(2);
+    u8 value = read_d8(emu);
+    emu->tick(1);
+    emu->cpu_.a = or_8(emu, emu->cpu_.a, value);
+    emu->tick(1);
 }
 void xf7_rst_30h(EMU *emu) {
     push_16(emu, emu->cpu_.pc);
@@ -1470,9 +1521,10 @@ void xf8_ld_hl_sp_r8(EMU *emu) {
   emu->cpu_.reset_fn();
   u16 v1 = emu->cpu_.sp;
   s16 v2 = static_cast<s16>(static_cast<s8>(read_d8(emu)));
+  emu->tick(1);
   u16 temp = v1 + v2;
   emu->cpu_.hl(temp);
-  u16 check = v1 & v2 & temp;
+  u16 check = v1 ^ v2 ^ temp;
   if (check & 0x100) {
     emu->cpu_.set_fc();
   } else {
@@ -1483,7 +1535,7 @@ void xf8_ld_hl_sp_r8(EMU *emu) {
   } else {
     emu->cpu_.reset_fh();
   }
-  emu->tick(3);
+  emu->tick(2);
 }
 void xf9_ld_sp_hl(EMU *emu) {
     emu->cpu_.sp = emu->cpu_.hl();
@@ -1491,15 +1543,17 @@ void xf9_ld_sp_hl(EMU *emu) {
 }
 void xfa_ld_a_a16(EMU *emu) {
     u16 address = read_d16(emu);
+    emu->tick(2);
     emu->cpu_.a = emu->bus_read(address);
-    emu->tick(4);
+    emu->tick(2);
 }
 void xfb_ei(EMU *emu) {
     emu->cpu_.enable_interrupt_master();
     emu->tick(1);
 }
 void xfe_cp_d8(EMU *emu) {
-    cp_8(emu, emu->cpu_.a, read_d8(emu));
+    u8 value = read_d8(emu);
+    cp_8(emu, emu->cpu_.a, value);
     emu->tick(2);
 }
 void xff_rst_38h(EMU *emu) {
