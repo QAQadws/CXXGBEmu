@@ -2,8 +2,9 @@
 using namespace std;
 
 int main(int argc, char* argv[]) {
-    PLATFORM platform;
-    platform.init(argc, argv);
+    PLATFORM platform(argc, argv);
+    platform.init();
     platform.run();
+    platform.clean();
     return 0;
 }

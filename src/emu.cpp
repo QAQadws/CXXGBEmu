@@ -26,6 +26,7 @@ EMU::EMU(int argc, char *argv[])
     paused_ = false; // 初始化暂停状态为 false
     timer_.init();
     serial_.init();
+    ppu_.init();
 }
 
 void EMU::update(f64 dt)
@@ -46,7 +47,7 @@ void EMU::tick(u32 mcycles) {
     if((clock_cycles_ % 512) ==0) {
       serial_.tick(this);
     }
-    // serial_.tick(this);
+    ppu_.tick(this);
 
   }
 }
@@ -83,6 +84,10 @@ u8 EMU::bus_read(u16 addressess)
   if(addressess == 0xFF0F) {
     // Interrupt flags register.
     return int_flags | 0xE0; // 0xE0 is the default value for unused bits
+  }
+  if(addressess >= 0xFF40 && addressess <= 0xFF4B) {
+    // PPU registers.
+    return ppu_.bus_read(addressess);
   }
   if (addressess >= 0xFF80 && addressess <= 0xFFFE) {
     // High RAM.
@@ -133,6 +138,11 @@ void EMU::bus_write(u16 address, u8 value)
   if(address == 0xFF0F) {
     // Interrupt flags register.
     int_flags = value & 0x1F; // 保留高位
+    return;
+  }
+  if(address >= 0xFF40 && address <= 0xFF4B) {
+    // PPU registers.
+    ppu_.bus_write(address, value);
     return;
   }
   if (address >= 0xFF80 && address <= 0xFFFE) {

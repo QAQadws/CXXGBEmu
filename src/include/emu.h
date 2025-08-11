@@ -5,6 +5,7 @@
 #include"defs.h"
 #include"timer.h"
 #include"serial.h"
+#include"ppu.h"
 
 class EMU {
  public:
@@ -19,9 +20,9 @@ class EMU {
 
    bool paused_ = false; // 暂停状态
    CPU cpu_;
-   u8 vram[0x2000]; // 8kb
-   u8 wram[0x2000]; // 8kb
-   u8 hram[128];
+   u8 vram[0x2000]{}; // 8kb
+   u8 wram[0x2000]{}; // 8kb
+   u8 hram[128]{};
    u8 int_flags = 0; // 中断标志寄存器
    //0xFFFF
    u8 int_enable_flags = 0; // 中断使能寄存器
@@ -30,6 +31,7 @@ class EMU {
    std::shared_ptr<CART> cart_;
    u64 clock_cycles_;
    double scale = 1.0f; // 默认缩放比例为1.0
+   PPU ppu_;
 
  private:
 

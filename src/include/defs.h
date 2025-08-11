@@ -15,7 +15,7 @@ typedef int64_t s64;
 typedef float f32;
 typedef double f64;
 
-#define DEBUG
+//#define DEBUG
 
 constexpr u8 INT_VBLANK = 0x01;   // 二进制: 00000001
 constexpr u8 INT_LCD_STAT = 0x02; // 二进制: 00000010
