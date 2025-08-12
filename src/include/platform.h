@@ -13,6 +13,7 @@ public:
   void render();
   void clean();
 
+  void update_main_window(EMU *emu);
   void update_dbg_window(EMU *emu);
   void display_tile(EMU *emu, SDL_Surface *surface, u16 startAddr, int tileNum, int x, int y);
 
@@ -20,8 +21,9 @@ public:
   PLATFORM(int argc, char *argv[]);
 
 private:
-  constexpr static int SCREEN_WIDTH = 1024;
-  constexpr static int SCREEN_HEIGHT = 768;
+   constexpr static int SCREEN_WIDTH = 1200;//1024
+   constexpr static int SCREEN_HEIGHT = 1080;//768
+
   int scale_ = 4;
    u32 tile_colors[4];
 
