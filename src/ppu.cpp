@@ -115,7 +115,7 @@ void PPU::tick_oam_scan(EMU *emu)
   if (line_cycles >= 80) {
     set_mode(PPUMode::drawing);
     fetch_window = false;
-    fetch_x = scroll_x & 0xF8;
+    fetch_x = 0;
     push_x = 0;
     draw_x = 0;
     bgw_queue.clear();
@@ -348,7 +348,8 @@ void PPU::fetcher_get_background_tile(EMU *emu)
         tile_index += 128;
     }
     bgw_data_addr_offset = ((u16)tile_index * 16) + (u16)(map_y % 8) * 2;
-    s32 tile_x = fetch_x - (scroll_x % 8);
+    s32 tile_x = (s32)(fetch_x) + (s32)(scroll_x);
+    tile_x = (tile_x / 8) * 8 - (s32)scroll_x;
     tile_x_begin = (s16)tile_x;
 }
 
@@ -369,25 +370,15 @@ void PPU::fetcher_push_bgw_pixels() {
   // Load tile data.
   u8 b1 = bgw_fetched_data[0];
   u8 b2 = bgw_fetched_data[1];
-
-  // ✅ 计算需要跳过的像素数（由于滚动造成的）
-  u8 pixels_to_skip = 0;
-  if (!fetch_window && fetch_x == (scroll_x & 0xF8)) {
-    pixels_to_skip = scroll_x & 0x07; // 跳过scroll_x的低3位指定的像素
-  }
-
   // Process every pixel in this tile.
   for (u32 i = 0; i < 8; ++i) {
-    // ✅ 跳过由于滚动需要跳过的像素
-    if (i < pixels_to_skip) {
-      continue;
-    }
-
     // Skip pixels not in the screen.
+    // Pushing pixels when tile_x_begin + i >= PPU_XRES is ok and
+    // they will not be drawn by the LCD driver, and all undrawn pixels
+    // will be discarded when HBLANK mode is entered.
     if (tile_x_begin + (s32)i < 0) {
       continue;
     }
-
     // If this is a window pixel, we reset fetcher to fetch window and discard
     // remaining pixels.
     if (!fetch_window && is_pixel_window(push_x, ly)) {
@@ -395,7 +386,6 @@ void PPU::fetcher_push_bgw_pixels() {
       fetch_x = push_x;
       break;
     }
-
     // Now we can stream pixel.
     BGWPixel pixel;
     if (bg_window_enabled()) {
