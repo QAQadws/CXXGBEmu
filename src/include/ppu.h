@@ -2,6 +2,7 @@
 #define __PPU_H__
 #include"defs.h"
 #include<deque>
+#include<vector>
 
 constexpr u32 PPU_LINES_PER_FRAME = 154;
 constexpr u32 PPU_CYCLES_PER_LINE = 456;
@@ -19,12 +20,26 @@ enum class PPUMode : u8
 
 enum class PPUFetchState : u8 { tile, data0, data1, idle, push };
 struct BGWPixel {
-  //! The color index.
   u8 color;
-  //! The palette used for this pixel.
   u8 palette;
 };
+struct OAMEntry {
+  u8 y;
+  u8 x;
+  u8 tile;
+  u8 flags;
 
+  u8 dmg_palette() const { return (flags >> 4) & 0x01; }
+  bool x_flip() const { return (flags >> 5) & 0x01; }
+  bool y_flip() const { return (flags >> 6) & 0x01; }
+  bool priority() const { return (flags >> 7) & 0x01; }
+};
+
+struct ObjectPixel {
+  u8 color;
+  u8 palette;
+  bool bg_priority;
+};
 class PPU {
     public:
 
@@ -36,6 +51,7 @@ class PPU {
     void tick_drawing(EMU *emu);
     void tick_hblank(EMU *emu);
     void tick_vblank(EMU *emu);
+    void tick_dma(EMU *emu);
     void increase_ly(EMU *emu);
     void fetcher_get_tile(EMU *emu);
     void fetcher_get_data(EMU *emu, u8 data_index);
@@ -43,6 +59,9 @@ class PPU {
     void lcd_draw_pixel();
     void fetcher_get_window_tile(EMU *emu);
     void fetcher_get_background_tile(EMU *emu);
+    void fetcher_get_sprite_tile(EMU *emu);
+    void fetcher_get_sprite_data(EMU *emu, u8 data_index);
+    void fetcher_push_sprite_pixels(u8 push_begin, u8 push_end);
 
     u8 pixels[PPU_XRES * PPU_YRES * 4 * 2]{};//TODO double buffer
     u8 current_back_buffer{};
@@ -55,7 +74,12 @@ class PPU {
     u16 window_map_area()const {return (lcdc & (0x01<<6)) ? 0x9C00 : 0x9800;}
     u16 bgw_data_area()const {return (lcdc & (0x01 << 4)) ? 0x8000 : 0x8800;}
     bool window_visible()const { return window_enabled() && wx <=166 && wy < PPU_YRES; }
-    bool is_pixel_window(u8 screen_x, u8 screen_y) const {return window_visible() && (screen_x + 7 >= wx) && (screen_y >= wy);}
+    bool is_pixel_window(u8 screen_x, u8 screen_y) const {
+      // WX存储的是实际窗口X坐标+7，所以实际窗口起始位置是wx-7
+      return window_visible() &&
+             (screen_x >= (wx > 7 ? wx - 7 : 0)) && // ✅ 修复X坐标判断
+             (screen_y >= wy);
+    }
 
     bool enabled()const{return lcdc & 0x80;}
     PPUMode get_mode()const{return static_cast<PPUMode>(lcds & 0x03);}
@@ -66,6 +90,8 @@ class PPU {
     bool vblank_int_enabled() const { return !!(lcds & (1 << 4)); }
     bool oam_int_enabled() const { return !!(lcds & (1 << 5)); }
     bool lyc_int_enabled() const { return !!(lcds & (1 << 6)); }
+    bool obj_enabled() const { return lcdc & 0x02; }
+    u8 obj_height() const { return (lcdc & 0x04) ? 16 : 8; }
 
     std::deque<BGWPixel> bgw_queue{};
     bool fetch_window{};
@@ -77,6 +103,16 @@ class PPU {
     u8 bgw_fetched_data[2]{};
     u8 push_x{};
     u8 draw_x{};
+
+    std::deque<ObjectPixel> obj_queue{};
+    std::vector<OAMEntry> sprites{};
+    OAMEntry fetched_sprites[3]{};
+    u8 num_fetched_sprites{};
+    u8 sprite_fetched_data[6]{};
+
+    bool dma_active{};
+    u8 dma_offset{};
+    u8 dma_start_delay{};
 
     u32 line_cycles{};
     u8 ppu_reg_[0x0C]{};

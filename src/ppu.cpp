@@ -44,12 +44,20 @@ void PPU::init()
   fetch_x = 0;
   push_x = 0;
   draw_x = 0;
+
+  dma_active = false;
+  dma_offset = 0;
+  dma_start_delay = 0;
+
   window_line = 0;
   current_back_buffer = 0;
 }
 
 void PPU::tick(EMU *emu)
 {
+    if((emu->clock_cycles_%4) == 0){
+      tick_dma(emu);
+    }
     if(!enabled()) {return;}
     ++line_cycles;
     switch(get_mode()){
@@ -93,6 +101,11 @@ void PPU::bus_write(u16 addr, u8 data)
         return;
       }
       if (addr == 0xFF44){return;} // read only.
+      if(addr == 0xFF46){
+        dma_active = true;
+        dma_offset = 0;
+        dma_start_delay = 1;
+      }
       ppu_reg_[addr - 0xFF40] = data;
     }
 }
@@ -107,6 +120,26 @@ void PPU::tick_oam_scan(EMU *emu)
     draw_x = 0;
     bgw_queue.clear();
     fetch_state = PPUFetchState::tile;
+  }
+  if (line_cycles == 1) {
+    sprites.clear();
+    sprites.reserve(10);
+    u8 sprite_height = obj_height();
+    for (u8 i = 0; i < 40; ++i) {
+      if (sprites.size() >= 10) {
+        break;
+      }
+      OAMEntry *entry = (OAMEntry *)(emu->oam) + i;
+      if (entry->y <= ly + 16 && entry->y + sprite_height > ly + 16) {
+        auto iter = sprites.begin();
+        while (iter != sprites.end()) {
+          if (iter->x > entry->x)
+            break;
+          ++iter;
+        }
+        sprites.insert(iter, *entry);
+      }
+    }
   }
 }
 
@@ -131,6 +164,8 @@ void PPU::tick_drawing(EMU *emu)
         if (hblank_int_enabled()) {
           emu->int_flags |= INT_LCD_STAT;
         }
+        bgw_queue.clear();
+        obj_queue.clear();
       }
       else{
         std::cerr << "PPU: Invalid line_cycles " << line_cycles << " at draw_x " << draw_x << std::endl;
@@ -205,6 +240,12 @@ void PPU::fetcher_get_tile(EMU *emu)
       fetcher_get_background_tile(emu);
     }
   }
+  else{
+    tile_x_begin = fetch_x;
+  }
+  if(obj_enabled()){
+    fetcher_get_sprite_tile(emu);
+  }
   fetch_state = PPUFetchState::data0;
   fetch_x += 8;
 }
@@ -215,6 +256,9 @@ void PPU::fetcher_get_data(EMU *emu, u8 data_index)
     u16 addr = bgw_data_area() + bgw_data_addr_offset + data_index;
     u8 data = emu->bus_read(addr);
     bgw_fetched_data[data_index] = data;
+  }
+  if(obj_enabled()){
+    fetcher_get_sprite_data(emu,data_index);
   }
   if(data_index == 0){
     fetch_state = PPUFetchState::data1;
@@ -228,7 +272,10 @@ void PPU::fetcher_push_pixels()
 {
   bool pushed = false;
   if (bgw_queue.size() < 8) {
+    u8 push_begin = push_x;
     fetcher_push_bgw_pixels();
+    u8 push_end = push_x;
+    fetcher_push_sprite_pixels(push_begin, push_end);
     pushed = true;
   }
   if (pushed) {
@@ -243,10 +290,18 @@ void PPU::lcd_draw_pixel()
       return;
     BGWPixel bgw_pixel = bgw_queue.front();
     bgw_queue.pop_front();
+    ObjectPixel obj_pixel = obj_queue.front();
+    obj_queue.pop_front();
     // Calculate background color.
     u8 bg_color = apply_palette(bgw_pixel.color, bgw_pixel.palette);
+    bool draw_obj =
+        obj_pixel.color && (!obj_pixel.bg_priority || bg_color == 0);
+    // Calculate obj color.
+    u8 obj_color = apply_palette(obj_pixel.color, obj_pixel.palette & 0xFC);
+    // Selects the final color.
+    u8 color = draw_obj ? obj_color : bg_color;
     // Output pixel.
-    switch (bg_color) {
+    switch (color) {
     case 0:
       set_pixel(draw_x, ly, 153, 161, 120, 255);//不同的绿色
       break;
@@ -355,5 +410,91 @@ void PPU::fetcher_push_bgw_pixels() {
     }
     bgw_queue.push_back(pixel);
     ++push_x;
+  }
+}
+
+void PPU::tick_dma(EMU *emu)
+{
+  if (!dma_active) {
+    return;
+  }
+  if (dma_start_delay > 0) {
+    --dma_start_delay;
+    return;
+  }
+  emu->oam[dma_offset] = emu->bus_read((((u16)dma) * 0x100) + dma_offset);
+  ++dma_offset;
+  dma_active = dma_offset < 0xA0;
+}
+
+void PPU::fetcher_get_sprite_tile(EMU* emu){
+  num_fetched_sprites = 0;
+  for (u8 i = 0; i < (u8)sprites.size(); ++i) {
+    s32 sp_x = (s32)sprites[i].x - 8;
+    if (((sp_x >= tile_x_begin) && (sp_x < (tile_x_begin + 8))) ||
+        ((sp_x + 7 >= tile_x_begin) && (sp_x + 7 < (tile_x_begin + 8)))) {
+      fetched_sprites[num_fetched_sprites] = sprites[i];
+      ++num_fetched_sprites;
+    }
+    if (num_fetched_sprites >= 3) {
+      break;
+    }
+  }
+}
+
+void PPU::fetcher_get_sprite_data(EMU *emu, u8 data_index) {
+  u8 sprite_height = obj_height();
+  for (u8 i = 0; i < num_fetched_sprites; ++i) {
+    u8 ty = (u8)(ly + 16 - fetched_sprites[i].y);
+    if (fetched_sprites[i].y_flip()) {
+      // Flip y in tile.
+      ty = (sprite_height - 1) - ty;
+    }
+    u8 tile = fetched_sprites[i].tile;
+    if (sprite_height == 16) {
+      tile &= 0xFE; // Clear the last 1 bit if in double tile mode.
+    }
+    sprite_fetched_data[(i * 2) + data_index] =
+        emu->bus_read(0x8000 + (tile * 16) + ty * 2 + data_index);
+  }
+}
+
+void PPU::fetcher_push_sprite_pixels(u8 push_begin, u8 push_end) {
+  for (u32 i = push_begin; i < push_end; ++i) {
+    ObjectPixel pixel;
+    // The default value is one transparent color.
+    pixel.color = 0;
+    pixel.palette = 0;
+    pixel.bg_priority = true;
+    if (obj_enabled()) {
+      for (u8 s = 0; s < num_fetched_sprites; ++s) {
+        s32 spx = (s32)fetched_sprites[s].x - 8;
+        s32 offset = (s32)(i)-spx;
+        if (offset < 0 || offset > 7) {
+          // This sprite does not cover this pixel.
+          continue;
+        }
+        u8 b1 = sprite_fetched_data[s * 2];
+        u8 b2 = sprite_fetched_data[s * 2 + 1];
+        u8 b = 7 - (u8)offset;
+        if (fetched_sprites[s].x_flip()) {
+          b = (u8)offset;
+        }
+        u8 lo = (!!(b1 & (1 << b)));
+        u8 hi = (!!(b2 & (1 << b))) << 1;
+        u8 color = hi | lo;
+        if (color == 0) {
+          // If this sprite is transparent, we look for the next sprite to
+          // blend.
+          continue;
+        }
+        // Use this pixel.
+        pixel.color = color;
+        pixel.palette = fetched_sprites[s].dmg_palette() ? obp1 : obp0;
+        pixel.bg_priority = fetched_sprites[s].priority();
+        break;
+      }
+    }
+    obj_queue.push_back(pixel);
   }
 }

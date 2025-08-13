@@ -23,6 +23,7 @@ class EMU {
    u8 vram[0x2000]{}; // 8kb
    u8 wram[0x2000]{}; // 8kb
    u8 hram[128]{};
+   u8 oam[160]{};
    u8 int_flags = 0; // 中断标志寄存器
    //0xFFFF
    u8 int_enable_flags = 0; // 中断使能寄存器

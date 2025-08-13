@@ -73,6 +73,10 @@ u8 EMU::bus_read(u16 addressess)
     // Working RAM.
     return wram[addressess - 0xC000];
   }
+  if(addressess >= 0xFE00 && addressess <= 0xFE9F) {
+    // OAM.
+    return oam[addressess - 0xFE00];
+  }
   if(addressess >= 0xFF01 && addressess <= 0xFF02) {
     // Serial transfer registers.
     return serial_.bus_read(addressess);
@@ -123,6 +127,11 @@ void EMU::bus_write(u16 address, u8 value)
   if (address <= 0xDFFF) {
     // Working RAM.
     wram[address - 0xC000] = value;
+    return;
+  }
+  if(address >= 0xFE00 && address <= 0xFE9F) {
+    // OAM.
+    oam[address - 0xFE00] = value;
     return;
   }
   if(address >= 0xFF01 && address <= 0xFF02) {
