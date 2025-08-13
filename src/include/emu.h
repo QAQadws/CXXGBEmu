@@ -6,6 +6,7 @@
 #include"timer.h"
 #include"serial.h"
 #include"ppu.h"
+#include"joypad.h"
 
 class EMU {
  public:
@@ -33,6 +34,7 @@ class EMU {
    u64 clock_cycles_;
    double scale = 1.0f; // 默认缩放比例为1.0
    PPU ppu_;
+   JOYPAD joypad_;
 
  private:
 

@@ -63,7 +63,7 @@ class PPU {
     void fetcher_get_sprite_data(EMU *emu, u8 data_index);
     void fetcher_push_sprite_pixels(u8 push_begin, u8 push_end);
 
-    u8 pixels[PPU_XRES * PPU_YRES * 4 * 2]{};//TODO double buffer
+    u8 pixels[PPU_XRES * PPU_YRES * 4 * 2]{};
     u8 current_back_buffer{};
     void set_pixel(s32 x, s32 y, u8 r, u8 g, u8 b, u8 a);
     void fetcher_push_bgw_pixels();

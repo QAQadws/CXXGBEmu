@@ -1,6 +1,5 @@
 #include "platform.h"
-#include "SDL3/SDL_rect.h"
-#include "SDL3/SDL_render.h"
+#include "SDL3/SDL_keycode.h"
 #include "defs.h"
 #include <chrono>
 #include <thread> 
@@ -21,7 +20,8 @@ inline u8 apply_palette(u8 color, u8 palette)
 
 void PLATFORM::init()
 {
-  tile_colors[0] = 0xFFFFFFFF; // 白色
+  TARGET_FPS = 59.73;
+   tile_colors[0] = 0xFFFFFFFF; // 白色
   tile_colors[1] = 0xFFAAAAAA; // 灰色
   tile_colors[2] = 0xFF555555; // 深灰色
   tile_colors[3] = 0xFF000000; // 黑色
@@ -57,11 +57,10 @@ void PLATFORM::handle_events()
         is_running_ = false;
         break;
       case SDL_EVENT_KEY_DOWN:
-        switch(event.key.key){
-          case SDLK_ESCAPE:
-            is_running_ = false;
-            break;
-        }
+        check_key_down(event);
+        break;
+      case SDL_EVENT_KEY_UP:
+        check_key_up(event);
         break;
     }
   }
@@ -76,10 +75,11 @@ void PLATFORM::update(f64 dt) {
 }
 
 void PLATFORM::run() {
-  const f64 TARGET_FPS = 59.73;
   const auto TARGET_FRAME_TIME = std::chrono::duration<double>(1.0 / TARGET_FPS);
-
   auto lastFrameTime = std::chrono::high_resolution_clock::now();
+
+  int frame_count = 0;
+  auto time1 = std::chrono::high_resolution_clock::now();
 
   while (is_running_) {
     auto currentTime = std::chrono::high_resolution_clock::now();
@@ -91,14 +91,24 @@ void PLATFORM::run() {
       handle_events();
       update(deltaTime);
       render();
-
       lastFrameTime = currentTime;
+
+      frame_count++;
+      
     } else {
       // 短暂休眠避免 CPU 100% 占用
-      std::this_thread::sleep_for(std::chrono::microseconds(100));
+      // std::this_thread::sleep_for(std::chrono::microseconds(1));
+      std::this_thread::yield();
+    }
+
+    if(frame_count ==1000){
+      auto time2 = std::chrono::high_resolution_clock::now();
+      std::chrono::duration<double> elapsed = time2 - time1;
+      std::cout << "Frame rate: " << frame_count / elapsed.count() << " FPS" << std::endl;
+      frame_count = 0;
+      time1 = std::chrono::high_resolution_clock::now();
     }
   }
-
 }
 
 void PLATFORM::render() {
@@ -183,6 +193,69 @@ void PLATFORM::display_tile(EMU *emu, SDL_Surface *surface, u16 startAddr, int t
       rc.h = scale_;
       SDL_FillSurfaceRect(surface, &rc, tile_colors[color]);
     }
+  }
+}
+
+void PLATFORM::check_key_down(SDL_Event event)
+{
+  switch (event.key.key){
+    case SDLK_ESCAPE:
+      is_running_ = false;
+      break;
+    case SDLK_A:
+      emu_.joypad_.left = true;
+      break;
+    case SDLK_D:
+      emu_.joypad_.right = true;
+      break;
+    case SDLK_W:
+      emu_.joypad_.up = true;
+      break;
+    case SDLK_S:
+      emu_.joypad_.down = true;
+      break;
+    case SDLK_J:
+      emu_.joypad_.a = true;
+      break;
+    case SDLK_K:
+      emu_.joypad_.b = true;
+      break;
+    case SDLK_U:
+      emu_.joypad_.select = true;
+      break;
+    case SDLK_I:
+      emu_.joypad_.start = true;
+      break;
+  }
+}
+
+void PLATFORM::check_key_up(SDL_Event event)
+{
+  switch (event.key.key){
+    case SDLK_A:
+      emu_.joypad_.left = false;
+      break;
+    case SDLK_D:
+      emu_.joypad_.right = false;
+      break;
+    case SDLK_W:
+      emu_.joypad_.up = false;
+      break;
+    case SDLK_S:
+      emu_.joypad_.down = false;
+      break;
+    case SDLK_J:
+      emu_.joypad_.a = false;
+      break;
+    case SDLK_K:
+      emu_.joypad_.b = false;
+      break;
+    case SDLK_U:
+      emu_.joypad_.select = false;
+      break;
+    case SDLK_I:
+      emu_.joypad_.start = false;
+      break;
   }
 }
 

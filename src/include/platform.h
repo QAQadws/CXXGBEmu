@@ -4,6 +4,7 @@
 #include "emu.h"
 #include<SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
+
 class PLATFORM{
 public:
   void init();
@@ -16,6 +17,8 @@ public:
   void update_main_window(EMU *emu);
   void update_dbg_window(EMU *emu);
   void display_tile(EMU *emu, SDL_Surface *surface, u16 startAddr, int tileNum, int x, int y);
+  void check_key_down(SDL_Event event);
+  void check_key_up(SDL_Event event);
 
   PLATFORM() = default;
   PLATFORM(int argc, char *argv[]);
@@ -38,5 +41,7 @@ private:
   SDL_Surface *debugScreen_;
   EMU emu_;
   bool is_running_ = true; // 是否正在运行
+
+   f64 TARGET_FPS = 59.73;
 };
 #endif // __PLATFORM_H__

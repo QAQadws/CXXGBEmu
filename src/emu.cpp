@@ -27,10 +27,12 @@ EMU::EMU(int argc, char *argv[])
     timer_.init();
     serial_.init();
     ppu_.init();
+    joypad_.init();
 }
 
 void EMU::update(f64 dt)
 {
+ joypad_.update(this);
  u64 frame_cycles = static_cast<u64>(dt * 4194304.0 * scale); // 计算当前帧的时钟周期数
  u64 end_cycles = clock_cycles_ + frame_cycles;
  while(clock_cycles_ < end_cycles) {
@@ -76,6 +78,10 @@ u8 EMU::bus_read(u16 addressess)
   if(addressess >= 0xFE00 && addressess <= 0xFE9F) {
     // OAM.
     return oam[addressess - 0xFE00];
+  }
+  if(addressess == 0xFF00) {
+    // Joypad register.
+    return joypad_.bus_read();
   }
   if(addressess >= 0xFF01 && addressess <= 0xFF02) {
     // Serial transfer registers.
@@ -134,6 +140,11 @@ void EMU::bus_write(u16 address, u8 value)
     oam[address - 0xFE00] = value;
     return;
   }
+  if(address == 0xFF00) {
+    // Joypad register.
+    joypad_.bus_write(value);
+    return;
+  }
   if(address >= 0xFF01 && address <= 0xFF02) {
     // Serial transfer registers.
     serial_.bus_write(address, value);
@@ -164,7 +175,8 @@ void EMU::bus_write(u16 address, u8 value)
     int_enable_flags = value & 0x1F; // 保留高位
     return;
   }
-  std::cerr << "Invalid memory write at address: " << std::hex << address << std::endl;
+  //TODO APU
+  // std::cerr << "Invalid memory write at address: " << std::hex << address << std::endl;
   //exit(EXIT_FAILURE);
   return;
 }
