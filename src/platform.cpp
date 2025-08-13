@@ -75,9 +75,8 @@ void PLATFORM::update(f64 dt) {
 }
 
 void PLATFORM::run() {
-  const auto TARGET_FRAME_TIME = std::chrono::duration<double>(1.0 / TARGET_FPS);
+  const auto TARGET_FRAME_TIME =std::chrono::duration<double>(1.0 / TARGET_FPS);
   auto lastFrameTime = std::chrono::high_resolution_clock::now();
-
   int frame_count = 0;
   auto time1 = std::chrono::high_resolution_clock::now();
 
@@ -86,25 +85,32 @@ void PLATFORM::run() {
     auto elapsed = currentTime - lastFrameTime;
 
     if (elapsed >= TARGET_FRAME_TIME) {
-      f64 deltaTime = std::chrono::duration<double>(elapsed).count();
-
       handle_events();
-      update(deltaTime);
+      update(std::chrono::duration<double>(elapsed).count());
       render();
-      lastFrameTime = currentTime;
-
       frame_count++;
-      
+      lastFrameTime = currentTime;
     } else {
-      // 短暂休眠避免 CPU 100% 占用
-      // std::this_thread::sleep_for(std::chrono::microseconds(1));
-      std::this_thread::yield();
+      // ✅ 混合延迟策略
+      auto remaining = TARGET_FRAME_TIME - elapsed;
+
+      if (remaining > std::chrono::milliseconds(2)) {
+        // 剩余时间>2ms时，使用SDL延迟减少CPU占用
+        auto delay_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            remaining - std::chrono::milliseconds(1));
+        SDL_DelayNS(delay_ns.count());
+      } else if (remaining > std::chrono::microseconds(100)) {
+        // 剩余时间100μs-2ms时，使用yield
+        std::this_thread::yield();
+      }
+      // 剩余时间<100μs时，忙等待保证精度
     }
 
-    if(frame_count ==1000){
+    if (frame_count == 100) {
       auto time2 = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double> elapsed = time2 - time1;
-      std::cout << "Frame rate: " << frame_count / elapsed.count() << " FPS" << std::endl;
+      std::cout << "Frame rate: " << frame_count / elapsed.count() << " FPS"
+                << std::endl;
       frame_count = 0;
       time1 = std::chrono::high_resolution_clock::now();
     }
