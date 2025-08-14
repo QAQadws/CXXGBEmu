@@ -37,6 +37,11 @@ void PLATFORM::init()
     }
     SDL_CreateWindowAndRenderer("GBEMU",SCREEN_WIDTH, SCREEN_HEIGHT, 0, &sdlWindow_, &sdlRenderer_);
     SDL_CreateWindowAndRenderer("DEBUG", 16*8*scale_, 32*8*scale_, 0, &sdlDebugWindow_, &sdlDebugRenderer_);
+    
+    // ✅ 启用VSync以防止撕裂
+    SDL_SetRenderVSync(sdlRenderer_, 1);
+    SDL_SetRenderVSync(sdlDebugRenderer_, 1);
+    
     debugScreen_ = SDL_CreateSurface( (16 * 8 * scale_), (32 * 8 * scale_) ,SDL_PixelFormat::SDL_PIXELFORMAT_ABGR8888);
     sdlDebugTexture_ = SDL_CreateTexture(sdlDebugRenderer_, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING,debugScreen_->w, debugScreen_->h);
     int x,y;
@@ -142,7 +147,10 @@ void PLATFORM::update_main_window(EMU *emu)
   rc1.w = screen_->w;
   rc1.h = screen_->h;
   SDL_FillSurfaceRect(screen_, &rc1, 0xFF111111);
-  u8 * pixels = emu->ppu_.pixels + (emu->ppu_.current_back_buffer * PPU_XRES * PPU_YRES * 4);
+  
+  // ✅ 使用新的显示缓冲区获取方法
+  u8 * pixels = emu->ppu_.get_display_buffer();
+  
   for(int y =0; y < PPU_YRES; y++){
     for(int x = 0; x < PPU_XRES; x++){
       u32 color = ((u32)(pixels[(y * PPU_XRES + x) * 4])<<16) +//R

@@ -140,6 +140,13 @@ class PPU {
     u8 &wy = ppu_reg_[10];
     //! 0xFF4B - WX (Window X position plus 7).
     u8 &wx = ppu_reg_[11];
+    
+    // ✅ 添加获取显示缓冲区的函数
+    u8* get_display_buffer() {
+        // 返回前一个缓冲区作为显示缓冲区
+        u8 display_buffer = (current_back_buffer + 1) % 2;
+        return pixels + display_buffer * PPU_XRES * PPU_YRES * 4;
+    }
 };
 
 

@@ -39,8 +39,10 @@ public:
     bool is_cart_battery(u8 cartridge_type);
     bool is_cart_mbc1(u8 cartridge_type);
     bool is_cart_mbc2(u8 cartridge_type);
+    bool is_cart_mbc3(u8 cartridge_type);
+    bool is_cart_timer(u8 cartridge_type);
 
-    CART() = default;
+        CART() = default;
     CART(const char* filename) {
         load_cart(filename);
     }

@@ -149,6 +149,17 @@ bool CART::is_cart_mbc2(u8 cartridge_type)
   return cartridge_type >= 5 && cartridge_type <= 6;
 }
 
+bool CART::is_cart_mbc3(u8 cartridge_type)
+{
+  return cartridge_type >= 15 && cartridge_type <= 19;
+}
+
+bool CART::is_cart_timer(u8 cartridge_type)
+{
+  return cartridge_type == 15 || cartridge_type == 16;
+}
+
+
 
 bool CART::load_cart(const char *filename) {
   std::string temp = "roms/" + std::string(filename);

@@ -185,7 +185,7 @@ void PPU::tick_hblank(EMU *emu)
             if(vblank_int_enabled()){
                 emu->int_flags |= INT_LCD_STAT;
             }
-            current_back_buffer = (current_back_buffer + 1) % 2; // Switch back buffer
+            // ✅ 移除这里的缓冲区切换，改为在VBlank结束时切换
         }
         else{
             set_mode(PPUMode::oam_scan);
@@ -205,6 +205,10 @@ void PPU::tick_vblank(EMU *emu)
             set_mode(PPUMode::oam_scan);
             ly = 0;
             window_line = 0;
+            
+            // ✅ 在VBlank结束时切换缓冲区，确保完整帧已渲染
+            current_back_buffer = (current_back_buffer + 1) % 2;
+            
             if(oam_int_enabled()){
                 emu->int_flags |= INT_LCD_STAT;
             }
