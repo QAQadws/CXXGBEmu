@@ -106,7 +106,7 @@ void PLATFORM::run() {
       // 剩余时间<100μs时，忙等待保证精度
     }
 
-    if (frame_count == 100) {
+    if (frame_count == 600) {
       auto time2 = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double> elapsed = time2 - time1;
       std::cout << "Frame rate: " << frame_count / elapsed.count() << " FPS"
@@ -131,6 +131,7 @@ void PLATFORM::render() {
 
 void PLATFORM::clean() {
     // TODO
+    emu_.clean();
 }
 
 void PLATFORM::update_main_window(EMU *emu)

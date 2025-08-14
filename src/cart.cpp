@@ -4,7 +4,8 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
-
+#include "defs.h"
+#include"emu.h"
 
 std::string CART::cart_type_name() const
 {
@@ -122,6 +123,28 @@ std::string CART::cart_lic_code() const
     return "UNKNOWN";
 }
 
+bool CART::is_cart_battery(u8 cartridge_type)
+{
+    return cartridge_type == 3 ||  // MBC1+RAM+BATTERY
+           cartridge_type == 6 ||  // MBC2+BATTERY
+           cartridge_type == 9 ||  // ROM+RAM+BATTERY 1
+           cartridge_type == 13 || // MMM01+RAM+BATTERY
+           cartridge_type == 15 || // MBC3+TIMER+BATTERY
+           cartridge_type == 16 || // MBC3+TIMER+RAM+BATTERY 2
+           cartridge_type == 19 || // MBC3+RAM+BATTERY 2
+           cartridge_type == 27 || // MBC5+RAM+BATTERY
+           cartridge_type == 30 || // MBC5+RUMBLE+RAM+BATTERY
+           cartridge_type == 34;   // MBC7+SENSOR+RUMBLE+RAM+BATTERY
+}
+
+bool CART::is_cart_mbc1(u8 cartridge_type)
+{
+  return cartridge_type == 1 ||  // MBC1
+         cartridge_type == 2 ||  // MBC1+RAM
+         cartridge_type == 3;     // MBC1+RAM+BATTERY
+}
+
+
 bool CART::load_cart(const char *filename) {
   std::string temp = "roms/" + std::string(filename);
   std::cout << "Loading cartridge: " << temp << std::endl;
@@ -180,4 +203,158 @@ bool CART::load_cart(const char *filename) {
     exit(EXIT_FAILURE);
   }
   return false;
+}
+
+u8 CART::cartridge_read(EMU* emu, u16 address)
+{
+  u8 cartridge_type =  header_->type;
+  if(is_cart_mbc1(cartridge_type)){
+    return mbc1_read(emu, address);
+  }
+  else{
+    if(address < 0x7FFF){
+      return rom_data_[address];
+    }
+    if (address >= 0xA000 && address <= 0xBFFF && emu->cram_size_) {
+      return emu->cram_[address - 0xA000];
+    }
+  }
+  std::cerr << "Invalid cartridge read at address: " << std::hex << address << std::endl;
+  return 0xFF;
+}
+
+void CART::cartridge_write(EMU* emu, u16 address, u8 value)
+{
+  u8 cartridge_type = header_->type;
+  if (is_cart_mbc1(cartridge_type)) {
+    mbc1_write(emu, address, value);
+    return;
+  } else {
+    if (address >= 0xA000 && address <= 0xBFFF && emu->cram_size_) {
+      emu->cram_[address - 0xA000] = value;
+      return;
+    }
+  }
+}
+
+u8 CART::mbc1_read(EMU* emu, u16 address)
+{
+  if(address <= 0x3FFF){
+    if(emu->banking_mode && emu->num_rom_banks_ >32){
+      u64 bank_index = emu->ram_bank_number;
+      u64 bank_offset = bank_index * 32 * 0x4000;//0x4000 = 16KB
+      return rom_data_[bank_offset + address];
+    } else {
+      return rom_data_[address];
+    }
+  }
+  if (address >= 0x4000 && address <= 0x7FFF) {
+    if (emu->banking_mode && emu->num_rom_banks_ > 32) {
+      u64 bank_index = emu->rom_bank_number + (emu->ram_bank_number << 5);
+      u64 bank_offset = bank_index * 0x4000; // 0x4000 = 16KB
+      return rom_data_[bank_offset + address - 0x4000];
+    } else {
+      u64 bank_index = emu->rom_bank_number;
+      u64 bank_offset = bank_index * 0x4000; // 0x4000 = 16KB
+      return rom_data_[bank_offset + address - 0x4000];
+    }
+  }
+  if (address >= 0xA000 && address <= 0xBFFF) {
+    if (emu->cram_size_) {
+      if (!emu->cram_enabled_) { return 0xFF; }
+      if (emu->num_rom_banks_ <= 32) {
+        if (emu->banking_mode) {
+          u64 bank_offset = emu->ram_bank_number * 0x2000; // 0x2000 = 8KB
+          return emu->cram_[bank_offset + address - 0xA000];
+        } else {
+          return emu->cram_[address - 0xA000];
+        }
+      }
+      else{
+        return emu->cram_[address - 0xA000];
+      }
+    }
+  }
+  std::cerr << "Invalid MBC1 read at address: " << std::hex << address << std::endl;
+  return 0xFF;
+}
+
+void CART::mbc1_write(EMU* emu, u16 address, u8 value)
+{
+  if(address <= 0x1FFF){
+    if(emu->cram_size_) {
+      if((value & 0x0F) == 0x0A){
+        emu->cram_enabled_ = true;
+      }
+      else{
+        emu->cram_enabled_ = false;
+      }
+      return;
+    }
+  }
+  if(address >= 0x2000 && address <= 0x3FFF){
+    emu->rom_bank_number = (value & 0x1F);
+    if(emu->rom_bank_number == 0){
+      emu->rom_bank_number = 1;
+    }
+    if(emu->num_rom_banks_ <= 2){
+      emu->rom_bank_number = emu->rom_bank_number & 0x01;
+    }
+    else if(emu->num_rom_banks_ <= 4){
+      emu->rom_bank_number = emu->rom_bank_number & 0x03;
+    }
+    else if(emu->num_rom_banks_ <= 8){
+      emu->rom_bank_number = emu->rom_bank_number & 0x07;
+    }
+    else if(emu->num_rom_banks_ <= 16){
+      emu->rom_bank_number = emu->rom_bank_number & 0x0F;
+    }
+    return;
+  }
+  if(address >= 0x4000 && address <= 0x5FFF){
+    emu->ram_bank_number = (value & 0x03);
+    if(emu->num_rom_banks_ > 32){
+      if (emu->num_rom_banks_ <= 64){
+        emu->ram_bank_number = emu->ram_bank_number & 0x01;
+      }
+    }
+    else{
+      if (emu->cram_size_ <= 0x2000) {//0x2000 = 8KB
+        emu->ram_bank_number = 0;
+      } else if (emu->cram_size_ <= 0x4000) {//0x4000 = 16KB
+        emu->ram_bank_number &= 0x01;
+      }
+    }
+    return;
+  }
+  if(address >= 0x6000 && address <= 0x7FFF){
+    if (emu->num_rom_banks_ > 32 || emu->cram_size_ > 0x2000) {
+      emu->banking_mode = value & 0x01;
+    }
+    return;
+  }
+  if(address >= 0xA000 && address <= 0xBFFF){
+    if (emu->cram_size_ > 0) {
+      if(!emu->cram_enabled_){return;}
+      if(emu->num_rom_banks_ <= 32){
+        if(emu->banking_mode){
+          u64 bank_offset = emu->ram_bank_number * 0x2000; // 0x2000 = 8KB
+          if(bank_offset + address - 0xA000 < emu->cram_size_){
+            emu->cram_[bank_offset + address - 0xA000] = value;
+          }
+          else{
+            std::cerr << "Invalid write to CRAM at address: " << std::hex << address << std::endl;
+          }
+        }
+        else{
+          emu->cram_[address - 0xA000] = value;
+        }
+      }
+      else{
+        emu->cram_[address - 0xA000] = value;
+      }
+      return;
+    }
+  }
+  std::cerr << "Invalid MBC1 write at address: " << std::hex << address << std::endl;
 }

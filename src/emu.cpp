@@ -1,7 +1,10 @@
 #include"emu.h"
+#include "cart.h"
 #include <cstdlib>
+#include <ios>
 #include <memory>
 #include <iostream>
+#include <fstream>  
 
 
 EMU::EMU(int argc, char *argv[])
@@ -19,7 +22,28 @@ EMU::EMU(int argc, char *argv[])
       cart_ = std::make_shared<CART>(argv[1]);
         cpu_ = CPU();
         scale = atof(argv[2]);
+      }
+      rom_name_ = argv[1];
+      // 去掉 .gb 扩展名
+      size_t dot_pos = rom_name_.find_last_of('.');
+      if (dot_pos != std::string::npos) {
+        rom_name_ = rom_name_.substr(0, dot_pos);
+      }
+    switch(cart_->header_->ram_size){
+      case 2 :cram_size_ = 0x02000; break; // 8KB
+      case 3 :cram_size_ = 0x08000; break; // 32KB
+      case 4 :cram_size_ = 0x20000; break; // 128KB
+      case 5 :cram_size_ = 0x10000; break; // 64KB
+      default: cram_size_ = 0; break;
     }
+    if(cram_size_){
+      cram_ = std::shared_ptr<u8[]>(new u8[cram_size_]());
+      if(cart_->is_cart_battery(cart_->header_->type)) {
+        load_cartridge_ram_data();
+        std::cerr << "Loaded cartridge RAM data from file." << std::endl;
+      }
+    }
+    num_rom_banks_ = ((((u32)32) << cart_->header_->rom_size) / 16);
     clock_cycles_ = 0;
     int_flags = 0; // 初始化中断标志寄存器
     int_enable_flags = 0; // 初始化中断使能寄存器
@@ -54,11 +78,18 @@ void EMU::tick(u32 mcycles) {
   }
 }
 
+void EMU::clean()
+{
+  if (cram_) {
+    save_cartridge_ram_data();
+  }
+}
+
 u8 EMU::bus_read(u16 addressess)
 {
   if (addressess <= 0x7FFF) {
     // Cartridge ROM.
-    return cart_->rom_data_[addressess];
+    return cart_->cartridge_read(this, addressess);
   }
   if (addressess <= 0x9FFF) {
     // VRAM.
@@ -66,9 +97,10 @@ u8 EMU::bus_read(u16 addressess)
   }
   if (addressess <= 0xBFFF) {
     // Cartridge RAM.
-    //TODO
+    if(cram_){
+      return cart_->cartridge_read(this, addressess);
+    }
     std::cerr << "Reading from cartridge RAM is not implemented yet." << std::endl;
-    exit(EXIT_FAILURE);
     return 0xFF;
   }
   if (addressess <= 0xDFFF) {
@@ -107,8 +139,8 @@ u8 EMU::bus_read(u16 addressess)
     // Interrupt enable register.
     return int_enable_flags | 0xE0; // 0xE0 is the default value for unused bits
   }
-  std::cerr << "Invalid memory read at addressess: " << std::hex << addressess << std::endl;
-  //exit(EXIT_FAILURE);
+  //TODO APU
+  //std::cerr << "Invalid memory read at addressess: " << std::hex << addressess << std::endl;
   return 0xFF;
 }
 
@@ -116,8 +148,8 @@ void EMU::bus_write(u16 address, u8 value)
 {
   if (address <= 0x7FFF) {
     // Cartridge ROM.
-   cart_->rom_data_[address] = value;
-    return;
+    cart_->cartridge_write(this, address, value);
+      return;
   }
   if (address <= 0x9FFF) {
     // VRAM.
@@ -126,7 +158,10 @@ void EMU::bus_write(u16 address, u8 value)
   }
   if (address <= 0xBFFF) {
     // Cartridge RAM.
-    //TODO
+    if(cram_) {
+      cart_->cartridge_write(this, address, value);
+      return;
+    }
     std::cerr << "Writing to cartridge RAM is not implemented yet." << std::endl;
     return;
   }
@@ -179,6 +214,38 @@ void EMU::bus_write(u16 address, u8 value)
   // std::cerr << "Invalid memory write at address: " << std::hex << address << std::endl;
   //exit(EXIT_FAILURE);
   return;
+}
+
+void EMU::load_cartridge_ram_data()
+{
+  std::string load_path = "roms/" + rom_name_ + ".sav";
+  std::ifstream file(load_path, std::ios::binary);
+  file.seekg(0, std::ios::end);
+  size_t file_size = file.tellg();
+  file.seekg(0, std::ios::beg);
+  if (file_size == cram_size_) {
+    file.read(reinterpret_cast<char*>(cram_.get()), file_size);
+  } else {
+    std::cerr << "Cartridge RAM size mismatch: " << file_size << " != " << cram_size_ << std::endl;
+  }
+  file.close();
+}
+
+void EMU::save_cartridge_ram_data()
+{
+  std::string save_path = "roms/" + rom_name_ + ".sav";
+  std::ofstream file (save_path, std::ios::binary | std::ios::trunc);
+  if(!file.is_open()){
+    std::cerr << "Failed to open save file: " << save_path << std::endl;
+    return;
+  }
+  file.write(reinterpret_cast<const char*>(cram_.get()), cram_size_);
+  if (file.good()) {
+    std::cout << "Cartridge RAM data saved: " << save_path << std::endl;
+  } else {
+    std::cerr << "Failed to write cartridge RAM data to: " << save_path << std::endl;
+  }
+  file.close();
 }
 // 0x0000 - 0x3FFF : ROM Bank 0
 // 0x4000 - 0x7FFF : ROM Bank 1 - Switchable
