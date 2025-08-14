@@ -230,6 +230,10 @@ u8 CART::cartridge_read(EMU* emu, u16 address)
   else if(is_cart_mbc2(cartridge_type)){
     return mbc2_read(emu, address);
   }
+  // 如果是 MBC3
+  else if(is_cart_mbc3(cartridge_type)){
+    return mbc3_read(emu, address);
+  }
   else{
     if(address < 0x7FFF){
       return rom_data_[address];
@@ -250,6 +254,9 @@ void CART::cartridge_write(EMU* emu, u16 address, u8 value)
     return;
   } else if (is_cart_mbc2(cartridge_type)) {
     mbc2_write(emu, address, value);
+    return;
+  } else if (is_cart_mbc3(cartridge_type)) {
+    mbc3_write(emu, address, value);
     return;
   } else {
     if (address >= 0xA000 && address <= 0xBFFF && emu->cram_size_) {
@@ -441,5 +448,98 @@ void CART::mbc2_write(EMU* emu, u16 address, u8 value)
     return;
   }
 std::cerr << "Invalid MBC2 write at address: " << std::hex << address << std::endl;
+  return;
+}
+
+u8 CART::mbc3_read(EMU *emu, u16 address) {
+  if (address <= 0x3FFF) {
+    return rom_data_[address];
+  }
+  if (address >= 0x4000 && address <= 0x7FFF) {
+    // Cartridge ROM bank 01-7F.
+    u64 bank_index = emu->rom_bank_number;
+    u64 bank_offset = bank_index * 0x4000; // 16KB = 0x4000
+    return rom_data_[bank_offset + (address - 0x4000)];
+  }
+  if (address >= 0xA000 && address <= 0xBFFF) {
+    if (emu->ram_bank_number <= 0x03) {
+      if (emu->cram_size_) {
+        if (!emu->cram_enabled_)
+          return 0xFF;
+        u64 bank_offset = emu->ram_bank_number * 0x2000; // 0x2000 = 8KB
+        // luassert(bank_offset + (address - 0xA000) <= emu->cram_size_);
+        if (bank_offset + (address - 0xA000) <= emu->cram_size_) {
+          return emu->cram_[bank_offset + (address - 0xA000)];
+        }
+      }
+    }
+    if (is_cart_timer(header_->type) && emu->ram_bank_number >= 0x08 &&
+        emu->ram_bank_number <= 0x0C) {
+      return ((u8 *)(&emu->rtc_.s))[emu->ram_bank_number - 0x08];
+    }
+  }
+  std::cerr << "Invalid MBC3 read at address: " << std::hex << address
+            << std::endl;
+  return 0xFF;
+}
+
+void CART::mbc3_write(EMU* emu, u16 addr, u8 data)
+{
+  if (addr <= 0x1FFF) {
+    // Enable/disable cartridge RAM.
+    if (data == 0x0A) {
+      emu->cram_enabled_ = true;
+    } else {
+      emu->cram_enabled_ = false;
+    }
+    return;
+  }
+  if (addr >= 0x2000 && addr <= 0x3FFF) {
+    // Set ROM bank number.
+    emu->rom_bank_number = data & 0x7F;
+    if (emu->rom_bank_number == 0) {
+      emu->rom_bank_number = 1;
+    }
+    return;
+  }
+  if (addr >= 0x4000 && addr <= 0x5FFF) {
+    // Set RAM bank number, or map RTC registers.
+    emu->ram_bank_number = data;
+    return;
+  }
+  if (addr >= 0x6000 && addr <= 0x7FFF) {
+    if (is_cart_timer(header_->type)) {
+      if (data == 0x01 && emu->rtc_.time_latching) {
+        emu->rtc_.latch();
+      }
+      if (data == 0x00) {
+        emu->rtc_.time_latching = true;
+      } else {
+        emu->rtc_.time_latching = false;
+      }
+      return;
+    }
+  }
+  if (addr >= 0xA000 && addr <= 0xBFFF) {
+    if (emu->ram_bank_number <= 0x03) {
+      if (emu->cram_size_) {
+        if (!emu->cram_enabled_)
+          return;
+        u64 bank_offset = emu->ram_bank_number * 0x2000; // 0x2000 = 8KB
+        // luassert(bank_offset + (addr - 0xA000) <= emu->cram_size_);
+        if (bank_offset + (addr - 0xA000) < emu->cram_size_) {
+          emu->cram_[bank_offset + (addr - 0xA000)] = data;
+        }
+        return;
+      }
+    }
+    if (is_cart_timer(header_->type) &&
+        emu->ram_bank_number >= 0x08 && emu->ram_bank_number <= 0x0C) {
+      ((u8 *)(&emu->rtc_))[emu->ram_bank_number - 0x08] = data;
+      emu->rtc_.update_timestamp();
+      return;
+    }
+  }
+std::cerr << "Invalid MBC3 write at address: " << std::hex << addr << std::endl;
   return;
 }

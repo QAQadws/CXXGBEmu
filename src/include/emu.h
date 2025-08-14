@@ -8,6 +8,7 @@
 #include"ppu.h"
 #include"joypad.h"
 #include <string>
+#include"rtc.h"
 
 
 class EMU {
@@ -22,6 +23,7 @@ class EMU {
    void bus_write(u16 address, u8 value);
    void load_cartridge_ram_data();
    void save_cartridge_ram_data();
+   s64 get_utc_timestamp();
 
    bool paused_ = false; // 暂停状态
    CPU cpu_;
@@ -49,6 +51,7 @@ class EMU {
    double scale = 1.0f; // 默认缩放比例为1.0
    PPU ppu_;
    JOYPAD joypad_;
+   RTC rtc_;
 
 
 

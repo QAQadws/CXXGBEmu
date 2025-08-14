@@ -32,6 +32,8 @@ public:
     void mbc1_write(EMU* emu, u16 address, u8 value);
     u8 mbc2_read(EMU* emu, u16 address);
     void mbc2_write(EMU* emu, u16 address, u8 value);
+    u8 mbc3_read(EMU* emu, u16 address);
+    void mbc3_write(EMU* emu, u16 addr, u8 data);
 
     bool load_cart(const char* filename);
     std::string cart_type_name() const;

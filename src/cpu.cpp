@@ -3,8 +3,6 @@
 #include"emu.h"
 #include "instructions.h"
 #include<iostream>
-#include <string>
-#include<format>
 
 #ifdef DEBUG
 static u32 count = 0;
