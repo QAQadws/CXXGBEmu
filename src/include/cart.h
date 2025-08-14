@@ -30,13 +30,16 @@ public:
     void cartridge_write(EMU* emu, u16 address, u8 value);
     u8 mbc1_read(EMU* emu, u16 address);
     void mbc1_write(EMU* emu, u16 address, u8 value);
+    u8 mbc2_read(EMU* emu, u16 address);
+    void mbc2_write(EMU* emu, u16 address, u8 value);
 
     bool load_cart(const char* filename);
     std::string cart_type_name() const;
     std::string cart_lic_code() const;
     bool is_cart_battery(u8 cartridge_type);
     bool is_cart_mbc1(u8 cartridge_type);
-    
+    bool is_cart_mbc2(u8 cartridge_type);
+
     CART() = default;
     CART(const char* filename) {
         load_cart(filename);

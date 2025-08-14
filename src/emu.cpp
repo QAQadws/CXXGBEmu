@@ -36,6 +36,9 @@ EMU::EMU(int argc, char *argv[])
       case 5 :cram_size_ = 0x10000; break; // 64KB
       default: cram_size_ = 0; break;
     }
+    if (cart_->is_cart_mbc2(cart_->header_->type)) {
+      cram_size_ = 512;
+    }
     if(cram_size_){
       cram_ = std::shared_ptr<u8[]>(new u8[cram_size_]());
       if(cart_->is_cart_battery(cart_->header_->type)) {
