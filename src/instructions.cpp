@@ -361,7 +361,7 @@ void x0f_rrca(EMU *emu) {
 }
 void x10_stop(EMU *emu) {
     read_d8(emu);
-    emu->paused_ = true; // 停止执行
+    emu->cpu_.halted_ = true; // 停止执行
     emu->tick(1);
 }
 void x11_ld_de_d16(EMU *emu) {

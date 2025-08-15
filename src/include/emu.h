@@ -43,8 +43,8 @@ class EMU {
 
    u8 num_rom_banks_{};
    bool cram_enabled_ = false;
-   u8 rom_bank_number = 1;
-   u8 ram_bank_number = 0;
+   u16 rom_bank_number = 1;
+   u16 ram_bank_number = 0;
    u8 banking_mode = 0;
 
    u64 clock_cycles_;
@@ -52,8 +52,6 @@ class EMU {
    PPU ppu_;
    JOYPAD joypad_;
    RTC rtc_;
-
-
 
 };
 

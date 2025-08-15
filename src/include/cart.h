@@ -34,6 +34,8 @@ public:
     void mbc2_write(EMU* emu, u16 address, u8 value);
     u8 mbc3_read(EMU* emu, u16 address);
     void mbc3_write(EMU* emu, u16 addr, u8 data);
+    u8 mbc5_read(EMU* emu, u16 address);
+    void mbc5_write(EMU* emu, u16 addr, u8 data);
 
     bool load_cart(const char* filename);
     std::string cart_type_name() const;
@@ -43,6 +45,7 @@ public:
     bool is_cart_mbc2(u8 cartridge_type);
     bool is_cart_mbc3(u8 cartridge_type);
     bool is_cart_timer(u8 cartridge_type);
+    bool is_cart_mbc5(u8 cartridge_type);
 
         CART() = default;
     CART(const char* filename) {

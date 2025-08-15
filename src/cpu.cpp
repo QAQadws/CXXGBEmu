@@ -3,6 +3,9 @@
 #include"emu.h"
 #include "instructions.h"
 #include<iostream>
+#ifdef DEBUG
+#include<format>
+#endif
 
 #ifdef DEBUG
 static u32 count = 0;
@@ -23,7 +26,7 @@ CPU::CPU()
 void CPU::step(EMU *emu) {
   if (halted_) {
     emu->tick(1);
-    if ((emu->int_flags & emu->int_enable_flags)) {
+    if ((emu->int_flags &emu->int_enable_flags)) {
       halted_ = false;
     }
   } else {
@@ -59,13 +62,6 @@ void CPU::step(EMU *emu) {
           dbg_.dbg_update(emu);
           dbg_.dbg_print();
           count++;
-          // if (count >= 100) {
-          // exit(EXIT_FAILURE);
-          // }
-          // count++;
-          // if (count >= 16700) {
-          // exit(EXIT_FAILURE);
-          // }
 
 #endif
         instruction(emu);

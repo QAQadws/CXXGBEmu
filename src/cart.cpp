@@ -159,6 +159,11 @@ bool CART::is_cart_timer(u8 cartridge_type)
   return cartridge_type == 15 || cartridge_type == 16;
 }
 
+bool CART::is_cart_mbc5(u8 cartridge_type)
+{
+  return cartridge_type >= 25 && cartridge_type <= 30;
+}
+
 
 
 bool CART::load_cart(const char *filename) {
@@ -234,6 +239,10 @@ u8 CART::cartridge_read(EMU* emu, u16 address)
   else if(is_cart_mbc3(cartridge_type)){
     return mbc3_read(emu, address);
   }
+  // 如果是 MBC5
+  else if(is_cart_mbc5(cartridge_type)){
+    return mbc5_read(emu, address);
+  }
   else{
     if(address < 0x7FFF){
       return rom_data_[address];
@@ -257,6 +266,9 @@ void CART::cartridge_write(EMU* emu, u16 address, u8 value)
     return;
   } else if (is_cart_mbc3(cartridge_type)) {
     mbc3_write(emu, address, value);
+    return;
+  } else if (is_cart_mbc5(cartridge_type)) {
+    mbc5_write(emu, address, value);
     return;
   } else {
     if (address >= 0xA000 && address <= 0xBFFF && emu->cram_size_) {
@@ -541,5 +553,70 @@ void CART::mbc3_write(EMU* emu, u16 addr, u8 data)
     }
   }
 std::cerr << "Invalid MBC3 write at address: " << std::hex << addr << std::endl;
+  return;
+}
+
+u8 CART::mbc5_read(EMU* emu, u16 address)
+{
+  if(address <= 0x3FFF) {
+    return rom_data_[address];
+  }
+  if(address >= 0x4000 && address <= 0x7FFF) {
+    u64 bank_index = emu->rom_bank_number;
+    u64 bank_offset = bank_index * 0x4000;// 16KB = 0x4000
+    return rom_data_[bank_offset + (address - 0x4000)];
+  }
+  if(address >= 0xA000 && address <= 0xBFFF) {
+    if(emu->ram_bank_number <= 0x03) {
+      if(emu->cram_size_) {
+        if(!emu->cram_enabled_)
+          return 0xFF;
+        u64 bank_offset = emu->ram_bank_number * 0x2000;// 8KB = 0x2000
+        if(bank_offset + (address - 0xA000) <= emu->cram_size_) {
+          return emu->cram_[bank_offset + (address - 0xA000)];
+        }
+      }
+    }
+  }
+  std::cerr << "Invalid MBC5 read at address: " << std::hex << address << std::endl;
+  return 0xFF;
+}
+
+void CART::mbc5_write(EMU* emu, u16 addr, u8 data)
+{
+  if(addr <= 0x1FFF) {
+    // Enable/disable cartridge RAM.
+    if(data == 0x0A) {
+      emu->cram_enabled_ = true;
+    } else {
+      emu->cram_enabled_ = false;
+    }
+    return;
+  }
+  if(addr >= 0x2000 && addr <= 0x2FFF) {
+    // Set ROM bank number. low 8 bit
+    emu->rom_bank_number = (emu->rom_bank_number & 0x0100) | (u16)data;
+    return;
+  }
+  if(addr >= 0x3000 && addr <= 0x3FFF) {
+    // Set ROM bank number. 9 bit
+    emu->rom_bank_number = (emu->rom_bank_number & 0x00FF) | ((u16)(data & 0x01) << 8);
+    return;
+  }
+  if(addr >= 0x4000 && addr <= 0x5FFF) {
+    emu->ram_bank_number = data & 0x0F;
+    return;
+  }
+  if(addr >= 0xA000 && addr <= 0xBFFF) {
+    if(emu->cram_size_) {
+      if(!emu->cram_enabled_) return;
+      u64 bank_offset = emu->ram_bank_number * 0x2000; // 0x2000 = 8KB
+      if(bank_offset + (addr - 0xA000) < emu->cram_size_) {
+        emu->cram_[bank_offset + (addr - 0xA000)] = data;
+        return;
+      }
+    }
+  }
+  std::cerr << "Invalid MBC5 write at address: " << std::hex << addr << std::endl;
   return;
 }
