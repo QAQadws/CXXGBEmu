@@ -1,7 +1,8 @@
 #include"ppu.h"
 #include <iostream>
 #include"emu.h"
-
+constexpr u32 PPU_LINES_PER_FRAME = 154;
+constexpr u32 PPU_CYCLES_PER_LINE = 456;
 inline u8 apply_palette(u8 color, u8 palette) {
   switch (color) {
   case 0:

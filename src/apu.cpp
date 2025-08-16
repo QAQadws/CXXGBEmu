@@ -466,7 +466,13 @@ u8 APU::bus_read(u16 addr)
   if (addr >= 0xFF30 && addr <= 0xFF3F) {
     return wave_pattern_ram[addr - 0xFF30];
   }
-  std::cerr << "APU: Invalid read from " << std::hex << addr << std::endl;
+  // Handle reserved/unused audio addresses
+  if (addr == 0xFF15) {
+    // 0xFF15 is unused/reserved (no NR20 register exists)
+    // Return 0xFF for unused addresses (common practice)
+    return 0xFF;
+  }
+  //std::cerr << "APU: Invalid read from " << std::hex << addr << std::endl;
   return 0xFF;
 }
 
@@ -569,7 +575,13 @@ void APU::bus_write(u16 addr, u8 data)
     wave_pattern_ram[addr - 0xFF30] = data;
     return;
   }
-  std::cerr << "APU: Unsupported bus write address: 0x" << std::hex << addr << std::endl;
+  // Handle reserved/unused audio addresses silently
+  if (addr == 0xFF15) {
+    // 0xFF15 is unused/reserved (no NR20 register exists)
+    // Some games may write to this address, but we should ignore it silently
+    return;
+  }
+  //std::cerr << "APU: Unsupported bus write address: 0x" << std::hex << addr << std::endl;
 }
 
 void APU::output_audio_samples(EMU *emu)

@@ -37,10 +37,7 @@ void PLATFORM::init()
     SDL_Log("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
     is_running_ = false;
     }
-    if(!TTF_Init()) {
-      SDL_Log("SDL_ttf could not initialize! SDL_ttf Error: %s\n", SDL_GetError());
-      is_running_ = false;
-    }
+
     SDL_CreateWindowAndRenderer("GBEMU",SCREEN_WIDTH, SCREEN_HEIGHT, 0, &sdlWindow_, &sdlRenderer_);
     SDL_CreateWindowAndRenderer("DEBUG", 16*8*scale_, 32*8*scale_, 0, &sdlDebugWindow_, &sdlDebugRenderer_);
     
@@ -119,7 +116,7 @@ void PLATFORM::run() {
       // 剩余时间<100μs时，忙等待保证精度
     }
 
-    if (frame_count == 600) {
+    if (frame_count == 1800) {
       auto time2 = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double> elapsed = time2 - time1;
       std::cout << "Frame rate: " << frame_count / elapsed.count() << " FPS"

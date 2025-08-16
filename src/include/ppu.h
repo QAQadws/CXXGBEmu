@@ -4,8 +4,7 @@
 #include<deque>
 #include<vector>
 
-constexpr u32 PPU_LINES_PER_FRAME = 154;
-constexpr u32 PPU_CYCLES_PER_LINE = 456;
+
 constexpr u32 PPU_YRES = 144;
 constexpr u32 PPU_XRES = 160;
 class EMU;
