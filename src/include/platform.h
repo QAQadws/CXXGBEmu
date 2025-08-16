@@ -4,6 +4,9 @@
 #include "emu.h"
 #include<SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
+#include<mutex>
+#include<deque>
+
 
 class PLATFORM{
 public:
@@ -23,7 +26,7 @@ public:
   PLATFORM() = default;
   PLATFORM(int argc, char *argv[]);
 
-private:
+
    constexpr static int SCREEN_WIDTH = 1200;//1024
    constexpr static int SCREEN_HEIGHT = 1080;//768
 
@@ -43,5 +46,17 @@ private:
   bool is_running_ = true; // 是否正在运行
 
    f64 TARGET_FPS = 59.73;
+
+   // ✅ 添加音频相关成员
+   SDL_AudioStream *audio_stream_;
+   SDL_AudioDeviceID audio_device_id_;
+   std::deque<f64> audio_buffer_l_; // 音频缓冲区l
+   std::deque<f64> audio_buffer_r_; // 音频缓冲区r
+   mutable std::mutex audio_buffer_lock_;
+
+  void init_audio();
+  void cleanup_audio();
+  static void audio_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount);
+  void push_audio_sample(float left, float right);
 };
 #endif // __PLATFORM_H__

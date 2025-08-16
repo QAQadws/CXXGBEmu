@@ -56,6 +56,7 @@ EMU::EMU(int argc, char *argv[])
     serial_.init();
     ppu_.init();
     joypad_.init();
+    apu.init();
 }
 
 void EMU::update(f64 dt)
@@ -81,6 +82,7 @@ void EMU::tick(u32 mcycles) {
       serial_.tick(this);
     }
     ppu_.tick(this);
+    apu.tick(this);
 
   }
 }
@@ -92,62 +94,65 @@ void EMU::clean()
   }
 }
 
-u8 EMU::bus_read(u16 addressess)
+u8 EMU::bus_read(u16 address)
 {
-  if (addressess <= 0x7FFF) {
+  if (address <= 0x7FFF) {
     // Cartridge ROM.
-    return cart_->cartridge_read(this, addressess);
+    return cart_->cartridge_read(this, address);
   }
-  if (addressess <= 0x9FFF) {
+  if (address <= 0x9FFF) {
     // VRAM.
-    return vram[addressess - 0x8000];
+    return vram[address - 0x8000];
   }
-  if (addressess <= 0xBFFF) {
+  if (address <= 0xBFFF) {
     // Cartridge RAM.
     if(cram_){
-      return cart_->cartridge_read(this, addressess);
+      return cart_->cartridge_read(this, address);
     }
     std::cerr << "Reading from cartridge RAM is not implemented yet." << std::endl;
     return 0xFF;
   }
-  if (addressess <= 0xDFFF) {
+  if (address <= 0xDFFF) {
     // Working RAM.
-    return wram[addressess - 0xC000];
+    return wram[address - 0xC000];
   }
-  if(addressess >= 0xFE00 && addressess <= 0xFE9F) {
+  if(address >= 0xFE00 && address <= 0xFE9F) {
     // OAM.
-    return oam[addressess - 0xFE00];
+    return oam[address - 0xFE00];
   }
-  if(addressess == 0xFF00) {
+  if(address == 0xFF00) {
     // Joypad register.
     return joypad_.bus_read();
   }
-  if(addressess >= 0xFF01 && addressess <= 0xFF02) {
+  if(address >= 0xFF01 && address <= 0xFF02) {
     // Serial transfer registers.
-    return serial_.bus_read(addressess);
+    return serial_.bus_read(address);
   }
-  if(addressess>=0xFF04 && addressess <= 0xFF07) {
+  if(address>=0xFF04 && address <= 0xFF07) {
     // Timer registers.
-    return timer_.bus_read(addressess);
+    return timer_.bus_read(address);
   }
-  if(addressess == 0xFF0F) {
+  if(address == 0xFF0F) {
     // Interrupt flags register.
     return int_flags | 0xE0; // 0xE0 is the default value for unused bits
   }
-  if(addressess >= 0xFF40 && addressess <= 0xFF4B) {
+  if (address >= 0xFF10 && address <= 0xFF3F) {
+    return apu.bus_read(address);
+  }
+  if(address >= 0xFF40 && address <= 0xFF4B) {
     // PPU registers.
-    return ppu_.bus_read(addressess);
+    return ppu_.bus_read(address);
   }
-  if (addressess >= 0xFF80 && addressess <= 0xFFFE) {
+  if (address >= 0xFF80 && address <= 0xFFFE) {
     // High RAM.
-    return hram[addressess - 0xFF80];
+    return hram[address - 0xFF80];
   }
-  if(addressess == 0xFFFF) {
+  if(address == 0xFFFF) {
     // Interrupt enable register.
     return int_enable_flags | 0xE0; // 0xE0 is the default value for unused bits
   }
   //TODO APU
-  //std::cerr << "Invalid memory read at addressess: " << std::hex << addressess << std::endl;
+  //std::cerr << "Invalid memory read at address: " << std::hex << address << std::endl;
   return 0xFF;
 }
 
@@ -200,6 +205,10 @@ void EMU::bus_write(u16 address, u8 value)
   if(address == 0xFF0F) {
     // Interrupt flags register.
     int_flags = value & 0x1F; // 保留高位
+    return;
+  }
+  if (address >= 0xFF10 && address <= 0xFF3F) {
+    apu.bus_write(address, value);
     return;
   }
   if(address >= 0xFF40 && address <= 0xFF4B) {

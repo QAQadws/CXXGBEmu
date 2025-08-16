@@ -9,6 +9,7 @@
 #include"joypad.h"
 #include <string>
 #include"rtc.h"
+#include"apu.h"
 
 
 class EMU {
@@ -52,7 +53,8 @@ class EMU {
    PPU ppu_;
    JOYPAD joypad_;
    RTC rtc_;
-
+   APU apu;
+   class PLATFORM *platform_;
 };
 
 

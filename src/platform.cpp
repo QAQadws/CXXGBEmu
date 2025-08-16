@@ -1,9 +1,15 @@
 #include "platform.h"
-#include "SDL3/SDL_keycode.h"
 #include "defs.h"
 #include <chrono>
 #include <thread> 
 #include<iostream>
+#include <algorithm>
+#include <cmath>
+
+// ✅ 线性插值函数
+inline float lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}
 
 inline u8 apply_palette(u8 color, u8 palette)
 {
@@ -51,6 +57,8 @@ void PLATFORM::init()
     //160 = 8 * 20 144 = 8 * 18
     screen_ = SDL_CreateSurface(20 * 8 * scale_, 18 * 8 * scale_, SDL_PixelFormat::SDL_PIXELFORMAT_ABGR8888);
     sdlTexture_ = SDL_CreateTexture(sdlRenderer_, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, screen_->w, screen_->h);
+
+    init_audio();
 }
 
 void PLATFORM::handle_events()
@@ -136,7 +144,9 @@ void PLATFORM::render() {
 
 void PLATFORM::clean() {
     // TODO
+    cleanup_audio();
     emu_.clean();
+    SDL_Quit();
 }
 
 void PLATFORM::update_main_window(EMU *emu)
@@ -278,5 +288,142 @@ void PLATFORM::check_key_up(SDL_Event event)
 
 PLATFORM::PLATFORM(int argc, char *argv[]): emu_(argc, argv), is_running_(true) {
     // 初始化其他成员变量或资源
+    audio_stream_ = nullptr;
+    audio_device_id_ = 0;
+    emu_.platform_ = this;
 }
 
+void PLATFORM::init_audio() {
+  // ✅ 配置音频规格 - 对应Luna SDK的设置
+  SDL_AudioSpec spec;
+  spec.format = SDL_AUDIO_F32; // 32位浮点 (对应 BitDepth::f32)
+  spec.channels = 2;           // 立体声 (对应 num_channels = 2)
+  spec.freq = 44100;           // 44.1kHz采样率
+
+  // ✅ 打开音频设备流 (对应 new_device)
+  audio_stream_ = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+                                            &spec, audio_callback, this);
+
+  if (!audio_stream_) {
+    SDL_Log("Failed to open audio device: %s", SDL_GetError());
+    return;
+  }
+
+  // ✅ 获取音频设备ID (对应选择primary adapter)
+  audio_device_id_ = SDL_GetAudioStreamDevice(audio_stream_);
+
+  // ✅ 启动音频设备 (对应添加回调)
+  SDL_ResumeAudioStreamDevice(audio_stream_);
+
+  SDL_Log("Audio initialized: %d Hz, %d channels, format=%d", spec.freq,
+          spec.channels, spec.format);
+
+}
+
+void PLATFORM::audio_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
+{
+    PLATFORM* platform = static_cast<PLATFORM*>(userdata);
+    
+    const int channels = 2;
+    const int bytes_per_sample = sizeof(float);
+    int frames_needed = additional_amount / (channels * bytes_per_sample);
+    
+    if (frames_needed <= 0) return;
+    
+    std::vector<float> audio_buffer(frames_needed * channels);
+    
+    // ✅ 音频重采样和输出
+    std::lock_guard<std::mutex> guard(platform->audio_buffer_lock_);
+    
+    // 模拟器采样率：1048576 Hz，音频设备采样率：44100 Hz
+    const double EMULATOR_SAMPLE_RATE = 1048576.0;
+    const double DEVICE_SAMPLE_RATE = 44100.0;  // 应该从实际设备获取
+    
+    int num_frames_read = 0;
+    
+    while (num_frames_read < frames_needed) {
+        // ✅ 计算当前帧在音频时间线上的时间戳
+        double timestamp = static_cast<double>(num_frames_read) / DEVICE_SAMPLE_RATE;
+        
+        // ✅ 将时间戳转换为模拟器音频缓冲区中的索引
+        double sample_index = timestamp * EMULATOR_SAMPLE_RATE;
+        
+        // ✅ 获取前后两个采样点的索引
+        size_t sample_1_index = static_cast<size_t>(std::floor(sample_index));
+        size_t sample_2_index = static_cast<size_t>(std::ceil(sample_index));
+        
+        // ✅ 检查缓冲区边界
+        if (sample_2_index >= platform->audio_buffer_l_.size() || 
+            sample_2_index >= platform->audio_buffer_r_.size()) {
+            break;
+        }
+        
+        // ✅ 获取左右声道的前后采样点
+        float sample_1_l = static_cast<float>(platform->audio_buffer_l_[sample_1_index]);
+        float sample_2_l = static_cast<float>(platform->audio_buffer_l_[sample_2_index]);
+        float sample_1_r = static_cast<float>(platform->audio_buffer_r_[sample_1_index]);
+        float sample_2_r = static_cast<float>(platform->audio_buffer_r_[sample_2_index]);
+        
+        // ✅ 线性插值因子
+        float interpolation_factor = static_cast<float>(sample_index) - static_cast<float>(sample_1_index);
+        
+        // ✅ 执行线性插值 (lerp)
+        float output_left = lerp(sample_1_l, sample_2_l, interpolation_factor);
+        float output_right = lerp(sample_1_r, sample_2_r, interpolation_factor);
+        
+        // ✅ 写入输出缓冲区
+        audio_buffer[num_frames_read * 2] = output_left;      // 左声道
+        audio_buffer[num_frames_read * 2 + 1] = output_right; // 右声道
+        
+        ++num_frames_read;
+    }
+    
+    // ✅ 从模拟器音频缓冲区中移除已处理的数据
+    if (num_frames_read > 0) {
+        // 计算输出音频片段的总时长
+        double delta_time = static_cast<double>(num_frames_read) / DEVICE_SAMPLE_RATE;
+        
+        // 计算需要移除的采样数量
+        size_t num_samples_to_remove = static_cast<size_t>(delta_time * EMULATOR_SAMPLE_RATE);
+        
+        // 限制移除数量不超过缓冲区大小
+        num_samples_to_remove = std::min(num_samples_to_remove, platform->audio_buffer_l_.size());
+        num_samples_to_remove = std::min(num_samples_to_remove, platform->audio_buffer_r_.size());
+        
+        // ✅ 从缓冲区头部移除已处理的数据
+        for (size_t i = 0; i < num_samples_to_remove; ++i) {
+            if (!platform->audio_buffer_l_.empty()) platform->audio_buffer_l_.pop_front();
+            if (!platform->audio_buffer_r_.empty()) platform->audio_buffer_r_.pop_front();
+        }
+    }
+    
+    // ✅ 将处理后的音频数据送入SDL音频流
+    SDL_PutAudioStreamData(stream, audio_buffer.data(), num_frames_read * channels * bytes_per_sample);
+}
+
+void PLATFORM::push_audio_sample(float left, float right)
+{
+  {
+    std::lock_guard<std::mutex> guard(audio_buffer_lock_);
+
+    // ✅ 限制音频缓冲区大小，最多存储65536个样本
+    // (约十六分之一秒的音频数据)
+    constexpr size_t AUDIO_BUFFER_MAX_SIZE = 65536;
+
+    if (audio_buffer_l_.size() >= AUDIO_BUFFER_MAX_SIZE) {
+      audio_buffer_l_.pop_front();
+    }
+    if (audio_buffer_r_.size() >= AUDIO_BUFFER_MAX_SIZE) {
+      audio_buffer_r_.pop_front();
+    }
+
+    audio_buffer_l_.push_back(left);
+    audio_buffer_r_.push_back(right);
+  }
+}
+void PLATFORM::cleanup_audio() {
+  if (audio_stream_) {
+    SDL_CloseAudioDevice(audio_device_id_);
+    audio_stream_ = nullptr;
+  }
+}
