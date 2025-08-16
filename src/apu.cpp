@@ -16,6 +16,13 @@ inline float dac(u8 sample) {
   return -1.0f + (2.0f * (15 - sample)) / 15.0f;
 }
 
+// 数值限制函数
+inline float clamp(float value, float min_val, float max_val) {
+  if (value < min_val) return min_val;
+  if (value > max_val) return max_val;
+  return value;
+}
+
 void APU::disable() { 
     std::memset(this, 0, sizeof(*this)); 
 }
@@ -57,6 +64,36 @@ void APU::enable_ch2()
 void APU::disable_ch2()
 {
     nr52_master_control &= (~0x02); // bit_reset(&nr52_master_control, 1);
+}
+
+void APU::enable_ch3()
+{
+  nr52_master_control |= 0x04; // bit_set(&nr52_master_control, 2);
+  ch3_period_counter = 0;
+  ch3_sample_index = 1;
+  ch3_length_timer = ch3_initial_length_timer();
+}
+
+void APU::disable_ch3()
+{
+    nr52_master_control &= (~0x04); // bit_reset(&nr52_master_control, 2);
+}
+
+void APU::enable_ch4()
+{
+  nr52_master_control |= 0x08; // bit_set(&nr52_master_control, 3);
+  ch4_period_counter = 0;
+  ch4_length_timer = ch4_initial_length_timer();
+  ch4_volume = ch4_initial_volume();
+  ch4_envelope_iteration_increase = ch4_envelope_increase();
+  ch4_envelope_iteration_pace = ch4_envelope_pace();
+  ch4_envelope_iteration_counter = 0;
+  ch4_lfsr = 0;
+}
+
+void APU::disable_ch4()
+{
+    nr52_master_control &= (~0x08); // bit_reset(&nr52_master_control, 3);
 }
 
 void APU::tick_ch1_sweep()
@@ -222,9 +259,128 @@ void APU::tick_ch2(EMU *emu)
   ch2_output_sample = dac(sample * ch2_volume);
 }
 
+u8 APU::ch3_wave_pattern(u8 index) const
+{
+  // luassert(index < 32);
+  if (index >= 32) return 0; // Safety check
+  u8 base = index / 2;
+  u8 wave = wave_pattern_ram[base];
+  // Read upper then lower.
+  wave = (index % 2) ? (wave & 0x0F) : ((wave >> 4) & 0x0F);
+  return wave;
+}
+
+void APU::tick_ch3_length()
+{
+  if (ch3_enabled() && ch3_length_enabled()) {
+    ++ch3_length_timer;
+    if (ch3_length_timer == 0) { // Overflow from 255 to 0 means 256 ticks
+      disable_ch3();
+    }
+  }
+}
+
+void APU::tick_ch3(EMU *emu)
+{
+  if (!ch3_dac_on()) {
+    disable_ch3();
+    return;
+  }
+  
+  // The CH3 of APU is ticked 2 times per M-cycle.
+  for (u32 i = 0; i < 2; ++i) {
+    ++ch3_period_counter;
+    if (ch3_period_counter >= 0x800) {
+      // advance to next sample.
+      ch3_sample_index = (ch3_sample_index + 1) % 32;
+      ch3_period_counter = ch3_period();
+    }
+  }
+  
+  u8 wave = ch3_wave_pattern(ch3_sample_index);
+  u8 level = ch3_output_level();
+  switch (level) {
+  case 0:
+    wave = 0;
+    break;
+  case 1:
+    break;
+  case 2:
+    wave >>= 1;
+    break;
+  case 3:
+    wave >>= 2;
+    break;
+  default:
+    wave = 0; // Safety fallback
+    break;
+  }
+  ch3_output_sample = dac(wave);
+}
+
+void APU::update_lfsr(bool short_mode)
+{
+  u8 b0 = ch4_lfsr & 0x01;
+  u8 b1 = (ch4_lfsr & 0x02) >> 1;
+  bool v = (b0 == b1);
+  ch4_lfsr = (ch4_lfsr & 0x7FFF) + (v ? 0x8000 : 0);
+  if (short_mode) {
+    ch4_lfsr = (ch4_lfsr & 0xFF7F) + (v ? 0x80 : 0);
+  }
+  ch4_lfsr >>= 1;
+}
+
+void APU::tick_ch4_envelope()
+{
+  if (ch4_enabled() && ch4_envelope_iteration_pace) {
+    ++ch4_envelope_iteration_counter;
+    if (ch4_envelope_iteration_counter >= ch4_envelope_iteration_pace) {
+      if (ch4_envelope_iteration_increase) {
+        if (ch4_volume < 15) {
+          ++ch4_volume;
+        }
+      } else {
+        if (ch4_volume > 0) {
+          --ch4_volume;
+        }
+      }
+      ch4_envelope_iteration_counter = 0;
+    }
+  }
+}
+
+void APU::tick_ch4_length()
+{
+  if (ch4_enabled() && ch4_length_enabled()) {
+    ++ch4_length_timer;
+    if (ch4_length_timer >= 64) {
+      disable_ch4();
+    }
+  }
+}
+
+void APU::tick_ch4(EMU *emu)
+{
+  ++ch4_period_counter;
+  if (ch4_period_counter >= ch4_period()) {
+    // advance to next sample.
+    update_lfsr(!!ch4_lfsr_width());
+    ch4_period_counter = 0;
+  }
+  u8 wave = ch4_lfsr & 0x01;
+  wave *= ch4_volume;
+  ch4_output_sample = dac(wave);
+}
+
 void APU::init()
 {
     std::memset(this, 0, sizeof(*this));
+    // 确保高通滤波器变量被正确初始化
+    history_sample_cursor = 0;
+    sample_sum_l = 0;
+    sample_sum_r = 0;
+    std::memset(history_samples_l, 0, sizeof(history_samples_l));
+    std::memset(history_samples_r, 0, sizeof(history_samples_r));
 }
 
 void APU::tick(EMU *emu)
@@ -239,6 +395,14 @@ void APU::tick(EMU *emu)
       // Tick CH2.
       if (ch2_enabled()) {
         tick_ch2(emu);
+      }
+      // Tick CH3.
+      if (ch3_enabled()) {
+        tick_ch3(emu);
+      }
+      // Tick CH4.
+      if (ch4_enabled()) {
+        tick_ch4(emu);
       }
       output_audio_samples(emu);
     }
@@ -270,9 +434,37 @@ u8 APU::bus_read(u16 addr)
     }
     return (&nr21_ch2_length_timer_duty_cycle)[addr - 0xFF16];
   }
+  // CH3 registers.
+  if (addr >= 0xFF1A && addr <= 0xFF1E) {
+    if (addr == 0xFF1B) {
+      // NR31 is write-only.
+      return 0;
+    }
+    if (addr == 0xFF1E) {
+      // only bit 6 is readable.
+      return nr34_ch3_period_high_control & 0x40;
+    }
+    return (&nr30_ch3_dac_enable)[addr - 0xFF1A];
+  }
+  // CH4 registers.
+  if (addr >= 0xFF20 && addr <= 0xFF23) {
+    if (addr == 0xFF20) {
+      // NR41 is write-only.
+      return 0;
+    }
+    if (addr == 0xFF23) {
+      // only bit 6 is readable.
+      return nr44_ch4_control & 0x40;
+    }
+    return (&nr41_ch4_length_timer)[addr - 0xFF20];
+  }
   // Master control registers.
   if (addr >= 0xFF24 && addr <= 0xFF26) {
     return (&nr50_master_volume_vin_panning)[addr - 0xFF24];
+  }
+  // Wave RAM
+  if (addr >= 0xFF30 && addr <= 0xFF3F) {
+    return wave_pattern_ram[addr - 0xFF30];
   }
   std::cerr << "APU: Invalid read from " << std::hex << addr << std::endl;
   return 0xFF;
@@ -321,6 +513,40 @@ void APU::bus_write(u16 addr, u8 data)
     }
     return;
   }
+  // CH3 registers.
+  if (addr >= 0xFF1A && addr <= 0xFF1E) {
+    if (!is_enabled()) {
+      // Only NRx1 is writable.
+      if (addr == 0xFF1B) {
+        nr31_ch3_length_timer = data;
+      }
+    } else {
+      if (addr == 0xFF1E && (data & 0x80)) { // bit_test(&data, 7)
+        // CH3 trigger.
+        enable_ch3();
+        data &= 0x7F;
+      }
+      (&nr30_ch3_dac_enable)[addr - 0xFF1A] = data;
+    }
+    return;
+  }
+  // CH4 registers.
+  if (addr >= 0xFF20 && addr <= 0xFF23) {
+    if (!is_enabled()) {
+      // Only NRx1 is writable.
+      if (addr == 0xFF20) {
+        nr41_ch4_length_timer = data;
+      }
+    } else {
+      if (addr == 0xFF23 && (data & 0x80)) { // bit_test(&data, 7)
+        // CH4 trigger.
+        enable_ch4();
+        data &= 0x7F;
+      }
+      (&nr41_ch4_length_timer)[addr - 0xFF20] = data;
+    }
+    return;
+  }
   // Master control registers.
   if (addr >= 0xFF24 && addr <= 0xFF26) {
     if (addr == 0xFF26) {
@@ -336,6 +562,11 @@ void APU::bus_write(u16 addr, u8 data)
     if (!is_enabled())
       return;
     (&nr50_master_volume_vin_panning)[addr - 0xFF24] = data;
+    return;
+  }
+  // Wave RAM
+  if (addr >= 0xFF30 && addr <= 0xFF3F) {
+    wave_pattern_ram[addr - 0xFF30] = data;
     return;
   }
   std::cerr << "APU: Unsupported bus write address: 0x" << std::hex << addr << std::endl;
@@ -364,10 +595,21 @@ void APU::output_audio_samples(EMU *emu)
     sample_r += ch2_output_sample;
   }
 
-  // TODO: 当实现其他声道时，在这里添加CH3, CH4的混合
-  // if (ch3_dac_on() && ch3_l_enabled()) sample_l += ch3_output_sample;
-  // if (ch3_dac_on() && ch3_r_enabled()) sample_r += ch3_output_sample;
-  // ...
+  // ✅ 混合CH3的左右声道输出
+  if (ch3_dac_on() && ch3_l_enabled()) {
+    sample_l += ch3_output_sample;
+  }
+  if (ch3_dac_on() && ch3_r_enabled()) {
+    sample_r += ch3_output_sample;
+  }
+
+  // ✅ 混合CH4的左右声道输出
+  if (ch4_l_enabled()) {
+    sample_l += ch4_output_sample;
+  }
+  if (ch4_r_enabled()) {
+    sample_r += ch4_output_sample;
+  }
 
   // ✅ Volume control - 音量控制
   // Scale output volume to [-1, 1].
@@ -375,6 +617,26 @@ void APU::output_audio_samples(EMU *emu)
   sample_r /= 4.0f;
   sample_l *= static_cast<float>(left_volume()) / 7.0f;
   sample_r *= static_cast<float>(right_volume()) / 7.0f;
+
+  // ✅ High-pass filter - 高通滤波器
+  // Write to history buffer.
+  sample_sum_l -= history_samples_l[history_sample_cursor];
+  sample_sum_r -= history_samples_r[history_sample_cursor];
+  history_samples_l[history_sample_cursor] = (u8)((sample_l + 1.0f) / 2.0f * 60.0f);
+  history_samples_r[history_sample_cursor] = (u8)((sample_r + 1.0f) / 2.0f * 60.0f);
+  sample_sum_l += history_samples_l[history_sample_cursor];
+  sample_sum_r += history_samples_r[history_sample_cursor];
+  history_sample_cursor = (history_sample_cursor + 1) % 65536;
+  
+  // High-pass filter.
+  float average_level_l = ((((float)sample_sum_l) / 65536.0f) / 60.0f * 2.0f) - 1.0f;
+  float average_level_r = ((((float)sample_sum_r) / 65536.0f) / 60.0f * 2.0f) - 1.0f;
+  sample_l -= average_level_l;
+  sample_r -= average_level_r;
+  
+  // Prevent sample value over [-1, 1] limit.
+  sample_l = clamp(sample_l, -1.0f, 1.0f);
+  sample_r = clamp(sample_r, -1.0f, 1.0f);
 
   // ✅ Output samples - 输出样本到音频缓冲区
   if (emu->platform_) {
@@ -394,6 +656,8 @@ void APU::tick_div_apu(EMU *emu)
       // Length is ticked at 256Hz.
       tick_ch1_length();
       tick_ch2_length();
+      tick_ch3_length();
+      tick_ch4_length();
     }
     if ((div_apu % 4) == 0) {
       // Sweep is ticked at 128Hz.
@@ -403,6 +667,7 @@ void APU::tick_div_apu(EMU *emu)
       // Envelope is ticked at 64Hz.
       tick_ch1_envelope();
       tick_ch2_envelope();
+      tick_ch4_envelope();
     }
   }
   last_div = div;
