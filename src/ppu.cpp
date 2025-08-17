@@ -308,16 +308,16 @@ void PPU::lcd_draw_pixel()
     // Output pixel.
     switch (color) {
     case 0:
-      set_pixel(draw_x, ly, 153, 161, 120, 255);//TODO不同的绿色
+      set_pixel(draw_x, ly, 224, 248, 208, 255);//TODO不同的绿色
       break;
     case 1:
-      set_pixel(draw_x, ly, 87, 93, 67, 255);
+      set_pixel(draw_x, ly, 136, 192, 112, 255);
       break;
     case 2:
-      set_pixel(draw_x, ly, 42, 46, 32, 255);
+      set_pixel(draw_x, ly, 52, 104, 86, 255);
       break;
     case 3:
-      set_pixel(draw_x, ly, 10, 10, 2, 255);
+      set_pixel(draw_x, ly, 8, 24, 32, 255);
       break;
     }
     ++draw_x;

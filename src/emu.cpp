@@ -151,7 +151,6 @@ u8 EMU::bus_read(u16 address)
     // Interrupt enable register.
     return int_enable_flags | 0xE0; // 0xE0 is the default value for unused bits
   }
-  //TODO APU
   //std::cerr << "Invalid memory read at address: " << std::hex << address << std::endl;
   return 0xFF;
 }
@@ -226,9 +225,7 @@ void EMU::bus_write(u16 address, u8 value)
     int_enable_flags = value & 0x1F; // 保留高位
     return;
   }
-  //TODO APU
   // std::cerr << "Invalid memory write at address: " << std::hex << address << std::endl;
-  //exit(EXIT_FAILURE);
   return;
 }
 
