@@ -1,6 +1,5 @@
 #include"apu.h"
 #include <cstring>
-#include <iostream>
 #include"emu.h"
 #include"platform.h"
 
