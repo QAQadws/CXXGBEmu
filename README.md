@@ -2,7 +2,7 @@
 一个用C++和SDL3编写的初代GameBoy模拟器
 
 
-你需要安装有xmake,r然后使用`xmake`来编译
+你需要安装有xmake,然后使用`xmake`来编译
 
 ##### 使用方法
 在项目根目录下的roms文件夹添加rom，后缀为gb（支持部分gbc文件）

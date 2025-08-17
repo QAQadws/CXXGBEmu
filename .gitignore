@@ -44,7 +44,9 @@ build/
 .vscode/
 .vs/
 out/
-roms/
+roms/*
+!roms/口袋妖怪·赤(中文).gb
 docs/
 assets/
 test/
+temp/

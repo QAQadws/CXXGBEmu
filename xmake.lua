@@ -1,15 +1,35 @@
 add_rules("mode.debug", "mode.release")
+includes("@builtin/xpack")
 set_project("GameBoy_emulator")
 set_version("1.0.0")
 set_languages("c99", "cxx20")
 set_warnings("all")
 add_cxflags("/utf-8", {tools = "msvc"})
+includes("src","Modules")
 
-includes("src","Modules","test")
-
-
-
-
+-- xpack("GameBoy_emulator")
+--     set_formats("zip", "nsis")
+--     set_basename("GameBoy_emulator-source")
+--     add_targets("GBemu")
+--     set_title("CXXGBEMU")                           -- 安装包标题
+--     set_author("adws")                          -- 作者信息
+--     set_description("A Game Boy emulator.")        -- 包描述
+--     set_homepage("https://github.com/QAQadws/CXXGBEmu")    
+--     -- 添加源码文件
+--     add_installfiles("src/**.cpp", {prefixdir = "src"})
+--     add_installfiles("src/include/**.h", {prefixdir = "src/include"})
+--         -- 添加构建文件
+--     add_installfiles("xmake.lua", {prefixdir = ""})
+--     add_installfiles("src/xmake.lua", {prefixdir = "src"})
+--     add_installfiles("Modules/xmake.lua", {prefixdir = "Modules"})
+--         -- 添加文档
+--     add_installfiles("README.md", {prefixdir = ""})
+--     add_installfiles(".gitignore", {prefixdir = ""})
+--     add_installfiles("roms/**.gb", {prefixdir = "roms"})
+--     after_installcmd(function (package, batchcmds)
+--         batchcmds:mkdir(package:installdir("build"))  -- 创建build目录
+--         print("GameBoy Emulator source package created!")
+--     end)
 
 --
 -- If you want to known more usage about xmake, please see https://xmake.io
