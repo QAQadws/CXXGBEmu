@@ -10,6 +10,7 @@
 #include <string>
 #include"rtc.h"
 #include"apu.h"
+#include<tcp_link.h>
 
 
 class EMU {
@@ -55,6 +56,9 @@ class EMU {
    RTC rtc_;
    APU apu;
    class PLATFORM *platform_;
+   uint16_t port_ = 8765;
+   std::unique_ptr<TcpLink> link_server;
+   std::unique_ptr<TcpLink> link_client;
 };
 
 

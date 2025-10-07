@@ -6,6 +6,7 @@
 #include <ios>
 #include <iostream>
 #include <memory>
+#include <tcp_link.h>
 
 EMU::EMU(int argc, char *argv[])
 {
@@ -19,11 +20,25 @@ EMU::EMU(int argc, char *argv[])
         cpu_ = CPU();
         scale = 1.0; // 默认缩放比例为1.0
     }
-    else{
-      cart_ = std::make_shared<CART>(argv[1]);
+    else if(argc == 3) {
+        cart_ = std::make_shared<CART>(argv[1]);
         cpu_ = CPU();
         scale = atof(argv[2]);
+        // 建立服务端（等待连接）
+        link_server = std::make_unique<TcpLink>(true, "", 8765);
+        link_server->start();
+        serial_.attach_link(link_server.get());
       }
+    else if(argc == 4) {
+        cart_ = std::make_shared<CART>(argv[1]);
+        cpu_ = CPU();
+        scale = atof(argv[2]);
+        std::string host_ = argv[3];
+        // 建立客户端并连接到指定主机
+        link_client = std::make_unique<TcpLink>(false, host_, 8765);
+        link_client->start();
+        serial_.attach_link(link_client.get());
+    }
       rom_name_ = argv[1];
       // 去掉 .gb 扩展名
       size_t dot_pos = rom_name_.find_last_of('.');

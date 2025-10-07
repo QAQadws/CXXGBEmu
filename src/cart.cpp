@@ -530,6 +530,8 @@ void CART::mbc3_write(EMU* emu, u16 addr, u8 data)
         emu->rtc_.time_latching = false;
       }
       return;
+    }else{
+      return;
     }
   }
   if (addr >= 0xA000 && addr <= 0xBFFF) {
