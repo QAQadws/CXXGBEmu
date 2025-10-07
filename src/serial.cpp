@@ -71,8 +71,9 @@ void SERIAL::end_transfer(EMU *emu) {
   sb_ = have_rx_ ? rx_latched_ : 0xFF;
 
   // 输出缓冲仅用于观测本端发出的字节
+#ifdef DEBUG
   output_buffer_.push_back(out_byte_);
-
+#endif
   transferring_ = false;
   have_rx_ = false;
   sc_ &= 0x7F;                  // 清传输使能位

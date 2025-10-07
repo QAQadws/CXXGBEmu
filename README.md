@@ -20,3 +20,8 @@
 | Start       | I    |
 | Select      | U    |
 
+##### 联机
+需要在同一个WIFI下
+当输入`.\GBemu.exe "you_rom.gb" 2`作为主机（默认使用端口8765）
+输入`.\GBemu.exe "you_rom.gb" 2 "xxx.xxx.x.xx"`为客户端，最后的参数为主机的`IPv4 地址`，可让主机通过`ipconfig`来查看
+- 注意：需双方速率一样，且主机先运行
